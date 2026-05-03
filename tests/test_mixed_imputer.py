@@ -646,6 +646,7 @@ class TestAddIndicatorOutput:
         # so indicators may not be forwarded.  At minimum, shape[0] must match.
         assert result.shape[0] == simple_df.shape[0]
         assert not result.isnull().any().any()
+<<<<<<< HEAD
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -838,3 +839,5 @@ class TestClassifierCompatibility:
             sample_posterior=True, max_iter=5, random_state=42,
         )
         assert not r.fit_transform(mixed_data).isnull().any().any()
+=======
+>>>>>>> 3c87497 (pushed project to repo)

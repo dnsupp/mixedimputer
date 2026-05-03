@@ -108,6 +108,7 @@ class _MixedTypeIterativeImputer(IterativeImputer):
         if target_is_categorical:
             if self.sample_posterior and hasattr(estimator.model_, "predict_proba"):
                 proba = estimator.model_.predict_proba(X_test)
+<<<<<<< HEAD
                 sampled_indices = _sample_from_probabilities(
                     proba, random_state=self.random_state_
                 )
@@ -116,6 +117,11 @@ class _MixedTypeIterativeImputer(IterativeImputer):
                 # labels via model_.classes_ so the OrdinalEncoder can
                 # decode them correctly.
                 imputed_values = estimator.model_.classes_[sampled_indices]
+=======
+                imputed_values = _sample_from_probabilities(
+                    proba, random_state=self.random_state_
+                )
+>>>>>>> 3c87497 (pushed project to repo)
             else:
                 imputed_values = estimator.predict(X_test)
 
@@ -285,6 +291,7 @@ class MixedTypeImputer(BaseEstimator, TransformerMixin):
         dtype are automatically treated as categorical.
 
     numeric_features : list of int or str, or None
+<<<<<<< HEAD
         Numeric column indices or names.  If None, auto-detected as all
         columns whose dtype passes ``pd.api.types.is_numeric_dtype`` and
         are not listed in ``categorical_features``.
@@ -304,6 +311,16 @@ class MixedTypeImputer(BaseEstimator, TransformerMixin):
         For ``sample_posterior``, the classifier should also implement
         ``predict_proba`` and expose ``classes_`` (most do — notable
         exception: ``RidgeClassifier`` lacks ``predict_proba``).
+=======
+        Numeric columns. If None, all remaining columns (or float/int types)
+        are treated as numeric. Only used as a check.
+
+    regressor : estimator, default=HistGradientBoostingRegressor()
+        Regressor used for numerical target columns.
+
+    classifier : estimator, default=HistGradientBoostingClassifier()
+        Classifier used for categorical target columns.
+>>>>>>> 3c87497 (pushed project to repo)
 
     max_iter : int, default=10
         Maximum number of imputation rounds.
