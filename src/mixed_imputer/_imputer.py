@@ -108,9 +108,14 @@ class _MixedTypeIterativeImputer(IterativeImputer):
         if target_is_categorical:
             if self.sample_posterior and hasattr(estimator.model_, "predict_proba"):
                 proba = estimator.model_.predict_proba(X_test)
-                imputed_values = _sample_from_probabilities(
+                sampled_indices = _sample_from_probabilities(
                     proba, random_state=self.random_state_
                 )
+                # sampled_indices are column indices into predict_proba
+                # (0 .. n_classes-1).  Map them back to the actual class
+                # labels via model_.classes_ so the OrdinalEncoder can
+                # decode them correctly.
+                imputed_values = estimator.model_.classes_[sampled_indices]
             else:
                 imputed_values = estimator.predict(X_test)
 
