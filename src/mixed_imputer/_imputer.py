@@ -285,14 +285,25 @@ class MixedTypeImputer(BaseEstimator, TransformerMixin):
         dtype are automatically treated as categorical.
 
     numeric_features : list of int or str, or None
-        Numeric columns. If None, all remaining columns (or float/int types)
-        are treated as numeric. Only used as a check.
+        Numeric column indices or names.  If None, auto-detected as all
+        columns whose dtype passes ``pd.api.types.is_numeric_dtype`` and
+        are not listed in ``categorical_features``.
 
     regressor : estimator, default=HistGradientBoostingRegressor()
-        Regressor used for numerical target columns.
+        Regressor used for numerical target columns.  Any sklearn regressor
+        with ``fit`` and ``predict`` works (e.g. ``Ridge``,
+        ``RandomForestRegressor``, ``BayesianRidge``).  For ``sample_posterior``
+        uncertainty, models that support ``return_std`` (like ``BayesianRidge``)
+        give per-prediction variance; others fall back to unit standard
+        deviation.
 
     classifier : estimator, default=HistGradientBoostingClassifier()
-        Classifier used for categorical target columns.
+        Classifier used for categorical target columns.  Any sklearn
+        classifier with ``fit`` and ``predict`` works (e.g.
+        ``LogisticRegression``, ``RandomForestClassifier``, ``GaussianNB``).
+        For ``sample_posterior``, the classifier should also implement
+        ``predict_proba`` and expose ``classes_`` (most do — notable
+        exception: ``RidgeClassifier`` lacks ``predict_proba``).
 
     max_iter : int, default=10
         Maximum number of imputation rounds.
