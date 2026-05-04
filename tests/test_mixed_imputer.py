@@ -646,3 +646,195 @@ class TestAddIndicatorOutput:
         # so indicators may not be forwarded.  At minimum, shape[0] must match.
         assert result.shape[0] == simple_df.shape[0]
         assert not result.isnull().any().any()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 22. Estimator compatibility — regressors
+# ──────────────────────────────────────────────────────────────────────
+
+class TestRegressorCompatibility:
+    """Every sklearn regressor with fit/predict should work out of the box."""
+
+    @pytest.fixture
+    def mixed_data(self):
+        return pd.DataFrame({
+            "age":    [25, 30, np.nan, 40, 35],
+            "city":   ["paris", "london", np.nan, "paris", "london"],
+            "income": [50000, np.nan, 70000, 60000, 55000],
+            "gender": ["M", "F", "M", np.nan, "F"],
+        })
+
+    # -- Linear models --
+    def test_linear_regression(self, mixed_data):
+        from sklearn.linear_model import LinearRegression
+        r = MixedTypeImputer(regressor=LinearRegression(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_bayesian_ridge(self, mixed_data):
+        from sklearn.linear_model import BayesianRidge
+        r = MixedTypeImputer(regressor=BayesianRidge(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_ridge(self, mixed_data):
+        from sklearn.linear_model import Ridge
+        r = MixedTypeImputer(regressor=Ridge(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_lasso(self, mixed_data):
+        from sklearn.linear_model import Lasso
+        r = MixedTypeImputer(regressor=Lasso(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_elastic_net(self, mixed_data):
+        from sklearn.linear_model import ElasticNet
+        r = MixedTypeImputer(regressor=ElasticNet(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_huber(self, mixed_data):
+        from sklearn.linear_model import HuberRegressor
+        r = MixedTypeImputer(regressor=HuberRegressor(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_sgd(self, mixed_data):
+        from sklearn.linear_model import SGDRegressor
+        r = MixedTypeImputer(regressor=SGDRegressor(random_state=0), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    # -- Ensemble models --
+    def test_random_forest_regressor(self, mixed_data):
+        from sklearn.ensemble import RandomForestRegressor
+        r = MixedTypeImputer(
+            regressor=RandomForestRegressor(n_estimators=20, random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_gradient_boosting_regressor(self, mixed_data):
+        from sklearn.ensemble import GradientBoostingRegressor
+        r = MixedTypeImputer(
+            regressor=GradientBoostingRegressor(n_estimators=20, random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_extra_trees_regressor(self, mixed_data):
+        from sklearn.ensemble import ExtraTreesRegressor
+        r = MixedTypeImputer(
+            regressor=ExtraTreesRegressor(n_estimators=20, random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_decision_tree_regressor(self, mixed_data):
+        from sklearn.tree import DecisionTreeRegressor
+        r = MixedTypeImputer(
+            regressor=DecisionTreeRegressor(random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    # -- Posterior sampling with regressors --
+    def test_posterior_sampling_linear(self, mixed_data):
+        from sklearn.linear_model import Ridge
+        r = MixedTypeImputer(regressor=Ridge(), sample_posterior=True, max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_posterior_sampling_random_forest(self, mixed_data):
+        from sklearn.ensemble import RandomForestRegressor
+        r = MixedTypeImputer(
+            regressor=RandomForestRegressor(n_estimators=20, random_state=0),
+            sample_posterior=True, max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 23. Estimator compatibility — classifiers
+# ──────────────────────────────────────────────────────────────────────
+
+class TestClassifierCompatibility:
+    """Every sklearn classifier with fit/predict should work out of the box."""
+
+    @pytest.fixture
+    def mixed_data(self):
+        return pd.DataFrame({
+            "age":    [25, 30, np.nan, 40, 35],
+            "city":   ["paris", "london", np.nan, "paris", "london"],
+            "income": [50000, np.nan, 70000, 60000, 55000],
+            "gender": ["M", "F", "M", np.nan, "F"],
+        })
+
+    def test_random_forest_classifier(self, mixed_data):
+        from sklearn.ensemble import RandomForestClassifier
+        r = MixedTypeImputer(
+            classifier=RandomForestClassifier(n_estimators=20, random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_gradient_boosting_classifier(self, mixed_data):
+        from sklearn.ensemble import GradientBoostingClassifier
+        r = MixedTypeImputer(
+            classifier=GradientBoostingClassifier(n_estimators=20, random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_extra_trees_classifier(self, mixed_data):
+        from sklearn.ensemble import ExtraTreesClassifier
+        r = MixedTypeImputer(
+            classifier=ExtraTreesClassifier(n_estimators=20, random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_logistic_regression(self, mixed_data):
+        from sklearn.linear_model import LogisticRegression
+        r = MixedTypeImputer(
+            classifier=LogisticRegression(random_state=0, max_iter=1000),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_ridge_classifier(self, mixed_data):
+        from sklearn.linear_model import RidgeClassifier
+        r = MixedTypeImputer(classifier=RidgeClassifier(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_knn_classifier(self, mixed_data):
+        from sklearn.neighbors import KNeighborsClassifier
+        r = MixedTypeImputer(
+            classifier=KNeighborsClassifier(n_neighbors=3),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_decision_tree_classifier(self, mixed_data):
+        from sklearn.tree import DecisionTreeClassifier
+        r = MixedTypeImputer(
+            classifier=DecisionTreeClassifier(random_state=0),
+            max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_gaussian_nb(self, mixed_data):
+        from sklearn.naive_bayes import GaussianNB
+        r = MixedTypeImputer(classifier=GaussianNB(), max_iter=5, random_state=42)
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    # -- Posterior sampling with classifiers --
+    def test_posterior_sampling_logistic(self, mixed_data):
+        from sklearn.linear_model import LogisticRegression
+        r = MixedTypeImputer(
+            classifier=LogisticRegression(random_state=0, max_iter=1000),
+            sample_posterior=True, max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
+
+    def test_posterior_sampling_random_forest_clf(self, mixed_data):
+        from sklearn.ensemble import RandomForestClassifier
+        r = MixedTypeImputer(
+            classifier=RandomForestClassifier(n_estimators=20, random_state=0),
+            sample_posterior=True, max_iter=5, random_state=42,
+        )
+        assert not r.fit_transform(mixed_data).isnull().any().any()
