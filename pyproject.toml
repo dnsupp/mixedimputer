@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mixed-imputer"
-version = "0.1.1"
+version = "0.1.0"
 description = "Mixed-type MICE imputer for scikit-learn — handles both numerical and categorical (string) columns in DataFrames."
 readme = "README.md"
 license = {text = "MIT"}
