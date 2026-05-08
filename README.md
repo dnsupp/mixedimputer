@@ -1,8 +1,8 @@
 # MixedTypeImputer
 
-**MixedTypeImputer** is a scikit-learn compatible transformer that performs iterative imputation (MICE) on DataFrames containing both numerical and categorical (string) columns.
+**MixedTypeImputer** is a scikit-learn compatible transformer that wraps and extends scikit-learn's `IterativeImputer` (MICE) to handle DataFrames containing both numerical and categorical (string) columns.
 
-It automatically detects column types, encodes categoricals with `OrdinalEncoder`, runs an iterative MICE‑style imputer that chooses a regressor or classifier per column, and decodes categoricals back to their original string values.
+It automatically detects column types, encodes categoricals with `OrdinalEncoder`, runs the iterative MICE engine (powered by sklearn's `IterativeImputer`) with a regressor or classifier chosen per column, and decodes categoricals back to their original string values.
 
 ## Features
 
