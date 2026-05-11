@@ -1,11 +1,14 @@
 # MixedTypeImputer
 
-**MixedTypeImputer** is a scikit-learn compatible transformer that wraps and extends scikit-learn's `IterativeImputer` (MICE) to handle DataFrames containing both numerical and categorical (string) columns.
+> **MixedTypeImputer is a wrapper around scikit-learn's [`IterativeImputer`](https://scikit-learn.org/stable/modules/generated/sklearn.impute.IterativeImputer.html)** (MICE), extending it to seamlessly handle DataFrames containing both numerical and categorical (string) columns.
 
 It automatically detects column types, encodes categoricals with `OrdinalEncoder`, runs the iterative MICE engine (powered by sklearn's `IterativeImputer`) with a regressor or classifier chosen per column, and decodes categoricals back to their original string values.
 
+> **Note:** `IterativeImputer` is an experimental feature in scikit-learn. `MixedTypeImputer` handles the required `enable_iterative_imputer` import internally — just import `MixedTypeImputer` and use it. If you are also importing `IterativeImputer` directly in your own code, make sure to import `MixedTypeImputer` **before** `IterativeImputer`, or explicitly run `from sklearn.experimental import enable_iterative_imputer` first.
+
 ## Features
 
+- **Wrapper for IterativeImputer** — builds on sklearn's experimental `IterativeImputer` (MICE), inheriting its battle-tested convergence logic while adding mixed-type support
 - **Mixed-type support** — handles numeric and string categorical columns in the same DataFrame
 - **Binary & multiclass classification** — categorical columns with 2, 3, or more classes are supported; the classifier automatically adapts to any number of unique categories
 - **Auto-detection** — automatically identifies categorical columns by dtype (object/category/string)
@@ -94,9 +97,11 @@ imputed = imputer.fit_transform(data)
 
 ## How It Works
 
+`MixedTypeImputer` is a thin wrapper that orchestrates sklearn's `IterativeImputer` for mixed-type DataFrames:
+
 1. **Column detection** — object/string/category dtype columns are identified as categorical; the rest as numeric.
-2. **Encoding** — categorical columns are encoded to integers using `OrdinalEncoder`, with NaN replaced by a sentinel(regression) and `HistGradientBoostingClassifier` for categorical columns (binary or multiclass classification). The classifier handles any number of unique categories automatically
-3. **Iterative imputation** — a modified `IterativeImputer` uses `HistGradientBoostingRegressor` for numeric columns and `HistGradientBoostingClassifier` for categorical columns.
+2. **Encoding** — categorical columns are encoded to integers using `OrdinalEncoder`, with NaN replaced by a sentinel value so the imputer sees them as truly missing.
+3. **Iterative imputation (MICE)** — a customized `IterativeImputer` uses `HistGradientBoostingRegressor` for numeric columns and `HistGradientBoostingClassifier` for categorical columns (binary or multiclass). The classifier handles any number of unique categories automatically.
 4. **Decoding** — imputed integer values are inverse-transformed back to their original string categories.
 
 ## Compatible Estimators
