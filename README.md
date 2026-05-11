@@ -1,10 +1,10 @@
-# MixedTypeImputer
+# MixedImputer
 
-> **MixedTypeImputer is a wrapper around scikit-learn's [`IterativeImputer`](https://scikit-learn.org/stable/modules/generated/sklearn.impute.IterativeImputer.html)** (MICE), extending it to seamlessly handle DataFrames containing both numerical and categorical (string) columns.
+> **MixedImputer is a wrapper around scikit-learn's [`IterativeImputer`](https://scikit-learn.org/stable/modules/generated/sklearn.impute.IterativeImputer.html)** (MICE), extending it to seamlessly handle DataFrames containing both numerical and categorical (string) columns.
 
 It automatically detects column types, encodes categoricals with `OrdinalEncoder`, runs the iterative MICE engine (powered by sklearn's `IterativeImputer`) with a regressor or classifier chosen per column, and decodes categoricals back to their original string values.
 
-> **Note:** `IterativeImputer` is an experimental feature in scikit-learn. `MixedTypeImputer` handles the required `enable_iterative_imputer` import internally — just import `MixedTypeImputer` and use it. If you are also importing `IterativeImputer` directly in your own code, make sure to import `MixedTypeImputer` **before** `IterativeImputer`, or explicitly run `from sklearn.experimental import enable_iterative_imputer` first.
+> **Note:** `IterativeImputer` is an experimental feature in scikit-learn. `MixedImputer` handles the required `enable_iterative_imputer` import internally — just import `MixedImputer` and use it. If you are also importing `IterativeImputer` directly in your own code, make sure to import `MixedImputer` **before** `IterativeImputer`, or explicitly run `from sklearn.experimental import enable_iterative_imputer` first.
 
 ## Features
 
@@ -20,14 +20,14 @@ It automatically detects column types, encodes categoricals with `OrdinalEncoder
 ## Installation
 
 ```bash
-pip install mixed-imputer
+pip install mixedimputer
 ```
 
 Or for development:
 
 ```bash
-git clone https://github.com/dnsupp/mixed-imputer.git
-cd mixed-imputer
+git clone https://github.com/dnsupp/mixedimputer.git
+cd mixedimputer
 pip install -e ".[dev]"
 ```
 
@@ -36,7 +36,7 @@ pip install -e ".[dev]"
 ```python
 import pandas as pd
 import numpy as np
-from mixed_imputer import MixedTypeImputer
+from mixedimputer import MixedImputer
 
 # Create sample data with missing values (binary & multiclass categoricals)
 data = pd.DataFrame({
@@ -49,7 +49,7 @@ data = pd.DataFrame({
 
 # Auto-detect categorical columns (str, object, or category dtype)
 # or specify them manually via categorical_features.
-imputer = MixedTypeImputer(
+imputer = MixedImputer(
     max_iter=5,
     random_state=42,
 )
@@ -69,7 +69,7 @@ print(imputed)
 from sklearn.linear_model import BayesianRidge
 from sklearn.ensemble import RandomForestClassifier
 
-imputer = MixedTypeImputer(
+imputer = MixedImputer(
     regressor=BayesianRidge(),
     classifier=RandomForestClassifier(random_state=0),
     sample_posterior=True,
@@ -97,7 +97,7 @@ imputed = imputer.fit_transform(data)
 
 ## How It Works
 
-`MixedTypeImputer` is a thin wrapper that orchestrates sklearn's `IterativeImputer` for mixed-type DataFrames:
+`MixedImputer` is a thin wrapper that orchestrates sklearn's `IterativeImputer` for mixed-type DataFrames:
 
 1. **Column detection** — object/string/category dtype columns are identified as categorical; the rest as numeric.
 2. **Encoding** — categorical columns are encoded to integers using `OrdinalEncoder`, with NaN replaced by a sentinel value so the imputer sees them as truly missing.
@@ -106,7 +106,7 @@ imputed = imputer.fit_transform(data)
 
 ## Compatible Estimators
 
-`MixedTypeImputer` accepts **any scikit-learn regressor or classifier** — you are not
+`MixedImputer` accepts **any scikit-learn regressor or classifier** — you are not
 limited to the defaults.  Tested and known to work:
 
 | Category | Estimators |
@@ -161,4 +161,4 @@ MIT — see [LICENSE](LICENSE) for details.
 
 ## Links
 
-- [GitHub Repository](https://github.com/dnsupp/mixed-imputer)
+- [GitHub Repository](https://github.com/dnsupp/mixedimputer)

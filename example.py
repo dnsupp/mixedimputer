@@ -1,10 +1,10 @@
-"""Example usage of MixedTypeImputer.
+"""Example usage of MixedImputer.
 
 To run: pip install -e . && python example.py
 """
 import numpy as np
 import pandas as pd
-from mixed_imputer import MixedTypeImputer
+from mixedimputer import MixedImputer
 
 # Fake mixed data with strings and numbers
 data = pd.DataFrame({
@@ -14,7 +14,7 @@ data = pd.DataFrame({
     'gender': ['M', 'F', 'M', np.nan],
 })
 
-imputer = MixedTypeImputer(
+imputer = MixedImputer(
     categorical_features=['city', 'gender'],  # you can also omit this – auto-detects object dtype
     max_iter=5,
     random_state=42,

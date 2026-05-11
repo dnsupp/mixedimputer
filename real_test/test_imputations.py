@@ -1,16 +1,16 @@
 """
-Real-world test of mixed-imputer installed from PyPI.
+Real-world test of mixedimputer installed from PyPI.
 
 Run:
-    pip install mixed-imputer
+    pip install mixedimputer
     python real_test/test_imputations.py
 """
 
 import numpy as np
 import pandas as pd
-from mixed_imputer import MixedTypeImputer, __version__
+from mixedimputer import MixedImputer, __version__
 
-print(f"mixed-imputer version: {__version__}")
+print(f"mixedimputer version: {__version__}")
 print()
 
 
@@ -29,7 +29,7 @@ data = pd.DataFrame({
     "education":  ["bachelor", "master", "bachelor", np.nan, "phd"],
 })
 
-imputer = MixedTypeImputer(max_iter=5, random_state=42)
+imputer = MixedImputer(max_iter=5, random_state=42)
 result = imputer.fit_transform(data)
 
 print("Original:")
@@ -52,7 +52,7 @@ print("=" * 60)
 print("Test 2 — Posterior sampling (stochastic)")
 print("=" * 60)
 
-imputer_sp = MixedTypeImputer(sample_posterior=True, max_iter=5, random_state=42)
+imputer_sp = MixedImputer(sample_posterior=True, max_iter=5, random_state=42)
 result_sp = imputer_sp.fit_transform(data)
 
 print(result_sp.to_string())
@@ -72,7 +72,7 @@ print("=" * 60)
 from sklearn.linear_model import BayesianRidge
 from sklearn.ensemble import RandomForestClassifier
 
-imputer_cust = MixedTypeImputer(
+imputer_cust = MixedImputer(
     regressor=BayesianRidge(),
     classifier=RandomForestClassifier(random_state=0),
     max_iter=5,
@@ -99,7 +99,7 @@ num_data = pd.DataFrame({
     "y": [np.nan, 2.0, np.nan, 4.0, 5.0],
     "z": [10.0, 20.0, np.nan, 40.0, np.nan],
 })
-imputer_num = MixedTypeImputer(max_iter=5, random_state=42)
+imputer_num = MixedImputer(max_iter=5, random_state=42)
 result_num = imputer_num.fit_transform(num_data)
 
 print(result_num.to_string())
@@ -118,8 +118,8 @@ print("=" * 60)
 print("Test 5 — Reproducibility with random_state")
 print("=" * 60)
 
-a = MixedTypeImputer(random_state=42)
-b = MixedTypeImputer(random_state=42)
+a = MixedImputer(random_state=42)
+b = MixedImputer(random_state=42)
 
 res_a = a.fit_transform(data)
 res_b = b.fit_transform(data)
@@ -142,7 +142,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 pipe = Pipeline([
-    ("imputer", MixedTypeImputer(max_iter=5, random_state=42)),
+    ("imputer", MixedImputer(max_iter=5, random_state=42)),
     ("scaler", StandardScaler()),
 ])
 num_only = data[["age", "income"]]
@@ -165,12 +165,12 @@ print("Test 7 — Single-column edge cases")
 print("=" * 60)
 
 df_single_num = pd.DataFrame({"x": [1.0, np.nan, 3.0]})
-r = MixedTypeImputer(random_state=42).fit_transform(df_single_num)
+r = MixedImputer(random_state=42).fit_transform(df_single_num)
 assert not r.isnull().any().any()
 print(f"  Single numeric col:  PASS  ({r.iloc[1,0]:.3f})")
 
 df_single_cat = pd.DataFrame({"x": ["a", np.nan, "b"]})
-r = MixedTypeImputer(random_state=42).fit_transform(df_single_cat)
+r = MixedImputer(random_state=42).fit_transform(df_single_cat)
 assert not r.isnull().any().any()
 print(f"  Single categorical:  PASS  ({r.iloc[1,0]})")
 

@@ -1,7 +1,7 @@
 """
 Mixed-type MICE imputer for scikit-learn.
 
-Provides a single ``MixedTypeImputer`` transformer that handles DataFrames
+Provides a single ``MixedImputer`` transformer that handles DataFrames
 containing both numerical and categorical (string) columns.  Internally it
 encodes categoricals with ``OrdinalEncoder``, runs an iterative MICE-style
 imputer that automatically chooses a regressor or classifier per column, and
@@ -39,7 +39,7 @@ def _safe_assign(X, values, *, row_indexer=None, column_indexer=None):
 # ----------------------------------------------------------------------
 # 1. Internal mixed-type iterative imputer
 # ----------------------------------------------------------------------
-class _MixedTypeIterativeImputer(IterativeImputer):
+class _MixedIterativeImputer(IterativeImputer):
     """
     IterativeImputer that uses a ``_ColumnTypeEstimator`` to switch between
     a regressor and a classifier depending on the target column type.
@@ -268,7 +268,7 @@ def _sample_from_probabilities(proba, random_state=None):
 # ----------------------------------------------------------------------
 # 3. Public, user-friendly wrapper
 # ----------------------------------------------------------------------
-class MixedTypeImputer(BaseEstimator, TransformerMixin):
+class MixedImputer(BaseEstimator, TransformerMixin):
     """
     Imputer for DataFrames containing both numerical and categorical (string)
     columns.
@@ -333,7 +333,7 @@ class MixedTypeImputer(BaseEstimator, TransformerMixin):
 
     Attributes
     ----------
-    imputation_model_ : _MixedTypeIterativeImputer
+    imputation_model_ : _MixedIterativeImputer
         The fitted internal imputer.
 
     encoder_ : OrdinalEncoder
@@ -448,7 +448,7 @@ class MixedTypeImputer(BaseEstimator, TransformerMixin):
 
         Returns
         -------
-        self : MixedTypeImputer
+        self : MixedImputer
             The fitted instance.
         """
         X = self._validate_input(X, reset=True)
@@ -545,7 +545,7 @@ class MixedTypeImputer(BaseEstimator, TransformerMixin):
         else:
             clf = self.classifier
 
-        self.imputation_model_ = _MixedTypeIterativeImputer(
+        self.imputation_model_ = _MixedIterativeImputer(
             estimator=_ColumnTypeEstimator(
                 regressor=reg,
                 classifier=clf,
