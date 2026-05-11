@@ -1,8 +1,8 @@
-"""Example usage of MixedTypeImputer."""
+"""Example usage of MixedImputer."""
 
 import numpy as np
 import pandas as pd
-from mixed_imputer import MixedTypeImputer
+from mixedimputer import MixedImputer
 
 # Fake mixed data with strings and numbers
 data = pd.DataFrame({
@@ -13,7 +13,7 @@ data = pd.DataFrame({
 })
 
 # Auto-detect categorical columns (object dtype is picked up automatically)
-imputer = MixedTypeImputer(
+imputer = MixedImputer(
     max_iter=5,
     random_state=42,
 )

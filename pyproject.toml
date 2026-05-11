@@ -3,8 +3,8 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mixed-imputer"
-version = "0.1.4"
+name = "mixedimputer"
+version = "1.0.0"
 description = "Mixed-type MICE imputer for scikit-learn — handles both numerical and categorical (string) columns in DataFrames."
 readme = "README.md"
 license = {text = "MIT"}
@@ -38,8 +38,8 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/dnsupp/mixed-imputer"
-Issues = "https://github.com/dnsupp/mixed-imputer"
+Repository = "https://github.com/dnsupp/mixedimputer"
+Issues = "https://github.com/dnsupp/mixedimputer"
 
 [tool.setuptools.packages.find]
 where = ["src"]

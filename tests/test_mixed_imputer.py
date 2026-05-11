@@ -1,4 +1,4 @@
-"""Comprehensive unit tests for MixedTypeImputer."""
+"""Comprehensive unit tests for MixedImputer."""
 
 import numpy as np
 import pandas as pd
@@ -6,7 +6,7 @@ import pytest
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from mixed_imputer import MixedTypeImputer
+from mixedimputer import MixedImputer
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -61,13 +61,13 @@ def int_cat_df():
 
 class TestImportAndInstantiation:
     def test_import(self):
-        """Can import MixedTypeImputer."""
-        from mixed_imputer import MixedTypeImputer as MTI
+        """Can import MixedImputer."""
+        from mixedimputer import MixedImputer as MTI
         assert MTI is not None
 
     def test_instantiation_defaults(self):
         """Create with default parameters."""
-        imputer = MixedTypeImputer()
+        imputer = MixedImputer()
         assert imputer.max_iter == 10
         assert imputer.tol == 1e-3
         assert imputer.sample_posterior is False
@@ -75,7 +75,7 @@ class TestImportAndInstantiation:
 
     def test_instantiation_with_params(self):
         """Create with custom parameters."""
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             categorical_features=["city"],
             max_iter=5,
             sample_posterior=True,
@@ -94,31 +94,31 @@ class TestImportAndInstantiation:
 class TestFitTransform:
     def test_fit_transform_returns_dataframe(self, simple_df):
         """fit_transform returns a DataFrame."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df)
         assert isinstance(result, pd.DataFrame)
 
     def test_fit_transform_no_nan_after(self, simple_df):
         """Result has no NaN values."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df)
         assert not result.isnull().any().any()
 
     def test_fit_transform_keeps_columns(self, simple_df):
         """Output has same columns as input."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df)
         assert list(result.columns) == list(simple_df.columns)
 
     def test_fit_transform_keeps_index(self, simple_df):
         """Output has same index as input."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df)
         assert list(result.index) == list(simple_df.index)
 
     def test_fit_transform_same_shape(self, simple_df):
         """Output shape matches input."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df)
         assert result.shape == simple_df.shape
 
@@ -130,14 +130,14 @@ class TestFitTransform:
 class TestCategoricalOutputType:
     def test_categorical_strings_preserved(self, simple_df):
         """String columns remain string/object after imputation."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df)
         assert pd.api.types.is_string_dtype(result["city"].dtype)
         assert pd.api.types.is_string_dtype(result["gender"].dtype)
 
     def test_categorical_values_are_valid(self, simple_df):
         """Imputed categories come from the original set."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df)
         valid_cities = {"paris", "london"}
         assert set(result["city"].dropna()) == valid_cities
@@ -152,13 +152,13 @@ class TestCategoricalOutputType:
 class TestSamplePosterior:
     def test_sample_posterior_false(self, simple_df):
         """sample_posterior=False produces valid results."""
-        imputer = MixedTypeImputer(sample_posterior=False, random_state=42)
+        imputer = MixedImputer(sample_posterior=False, random_state=42)
         result = imputer.fit_transform(simple_df)
         assert not result.isnull().any().any()
 
     def test_sample_posterior_true(self, simple_df):
         """sample_posterior=True produces valid results with valid categories."""
-        imputer = MixedTypeImputer(sample_posterior=True, random_state=42)
+        imputer = MixedImputer(sample_posterior=True, random_state=42)
         result = imputer.fit_transform(simple_df)
         assert not result.isnull().any().any()
         valid_cities = {"paris", "london"}
@@ -166,8 +166,8 @@ class TestSamplePosterior:
 
     def test_sample_posterior_reproducibility(self, simple_df):
         """Same random_state with sample_posterior gives same results."""
-        imputer1 = MixedTypeImputer(sample_posterior=True, random_state=42)
-        imputer2 = MixedTypeImputer(sample_posterior=True, random_state=42)
+        imputer1 = MixedImputer(sample_posterior=True, random_state=42)
+        imputer2 = MixedImputer(sample_posterior=True, random_state=42)
         res1 = imputer1.fit_transform(simple_df)
         res2 = imputer2.fit_transform(simple_df)
         pd.testing.assert_frame_equal(res1, res2)
@@ -181,7 +181,7 @@ class TestArrayInput:
     def test_array_input_requires_categorical_features(self):
         """Array input must provide categorical_features."""
         X = np.array([[1.0, 2.0], [np.nan, 3.0]])
-        imputer = MixedTypeImputer()
+        imputer = MixedImputer()
         with pytest.raises(ValueError, match="categorical_features must be provided"):
             imputer.fit_transform(X)
 
@@ -193,7 +193,7 @@ class TestArrayInput:
         X[2, 1] = np.nan
         # Treat column 2 as categorical (encoded as integers 0/1/2)
         X[:, 2] = (X[:, 2] * 3).astype(int).astype(float)
-        imputer = MixedTypeImputer(categorical_features=[2], random_state=42)
+        imputer = MixedImputer(categorical_features=[2], random_state=42)
         result = imputer.fit_transform(X)
         assert result.shape == X.shape
         assert not np.isnan(result).any()
@@ -207,7 +207,7 @@ class TestArrayInput:
         X[5, 2] = np.nan
         # Treat column 1 as categorical (encoded as integers 0/1)
         X[:, 1] = (X[:, 1] > 0.5).astype(float)
-        imputer = MixedTypeImputer(categorical_features=[1], random_state=42)
+        imputer = MixedImputer(categorical_features=[1], random_state=42)
         result = imputer.fit_transform(X)
         assert result.shape == X.shape
         assert not np.isnan(result).any()
@@ -220,20 +220,20 @@ class TestArrayInput:
 class TestAutoDetection:
     def test_auto_detect_object_dtype(self, simple_df):
         """Object dtype columns auto-detected as categorical."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         imputer.fit(simple_df)
         assert "city" in imputer.categorical_features
         assert "gender" in imputer.categorical_features
 
     def test_auto_detect_category_dtype(self, int_cat_df):
         """Category dtype columns auto-detected."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         imputer.fit(int_cat_df)
         assert "cat" in imputer.categorical_features
 
     def test_numeric_not_auto_detected(self, simple_df):
         """Numeric columns not auto-detected as categorical."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         imputer.fit(simple_df)
         assert "age" not in imputer.categorical_features
         assert "income" not in imputer.categorical_features
@@ -244,7 +244,7 @@ class TestAutoDetection:
             "a": [1.0, 2.0, np.nan],
             "b": ["x", "y", "z"],
         })
-        imputer = MixedTypeImputer(categorical_features=["a"], random_state=42)
+        imputer = MixedImputer(categorical_features=["a"], random_state=42)
         imputer.fit(df)
         # "a" should be treated as categorical even though it's numeric
         assert "a" in imputer.categorical_features
@@ -257,13 +257,13 @@ class TestAutoDetection:
 class TestEdgeCases:
     def test_no_missing_values(self, simple_df_no_nan):
         """DataFrame with no NaNs is returned unchanged."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(simple_df_no_nan)
         pd.testing.assert_frame_equal(result, simple_df_no_nan, check_dtype=False)
 
     def test_all_missing_one_column(self, all_missing_col_df):
         """Works even if one column is entirely missing."""
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             keep_empty_features=True,
             random_state=42,
         )
@@ -273,7 +273,7 @@ class TestEdgeCases:
     def test_single_column_numeric(self):
         """Single numeric column works."""
         df = pd.DataFrame({"x": [1.0, np.nan, 3.0]})
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(df)
         assert not result.isnull().any().any()
         assert result.shape == (3, 1)
@@ -281,7 +281,7 @@ class TestEdgeCases:
     def test_single_column_categorical(self):
         """Single categorical column works."""
         df = pd.DataFrame({"x": ["a", np.nan, "b"]})
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(df)
         assert not result.isnull().any().any()
         assert result.shape == (3, 1)
@@ -289,21 +289,21 @@ class TestEdgeCases:
     def test_empty_dataframe(self):
         """Empty DataFrame should raise or handle gracefully."""
         df = pd.DataFrame()
-        imputer = MixedTypeImputer()
+        imputer = MixedImputer()
         with pytest.raises(ValueError):
             imputer.fit_transform(df)
 
     def test_all_numeric_dataframe(self):
         """DataFrame with only numeric columns works."""
         df = pd.DataFrame({"x": [1.0, np.nan, 3.0], "y": [np.nan, 2.0, 3.0]})
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(df)
         assert not result.isnull().any().any()
 
     def test_all_categorical_dataframe(self):
         """DataFrame with only categorical columns works."""
         df = pd.DataFrame({"a": ["x", np.nan, "z"], "b": [np.nan, "y", "z"]})
-        imputer = MixedTypeImputer(random_state=42, max_iter=5)
+        imputer = MixedImputer(random_state=42, max_iter=5)
         result = imputer.fit_transform(df)
         assert not result.isnull().any().any()
 
@@ -315,10 +315,10 @@ class TestEdgeCases:
 class TestConsistency:
     def test_fit_transform_equals_fit_then_transform(self, simple_df):
         """fit_transform gives same result as fit + transform."""
-        imputer1 = MixedTypeImputer(random_state=42)
+        imputer1 = MixedImputer(random_state=42)
         res1 = imputer1.fit_transform(simple_df)
 
-        imputer2 = MixedTypeImputer(random_state=42)
+        imputer2 = MixedImputer(random_state=42)
         imputer2.fit(simple_df)
         res2 = imputer2.transform(simple_df)
 
@@ -326,7 +326,7 @@ class TestConsistency:
 
     def test_transform_before_fit_raises(self, simple_df):
         """transform before fit raises."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         with pytest.raises(Exception):
             imputer.transform(simple_df)
 
@@ -338,7 +338,7 @@ class TestConsistency:
 class TestParameterValidation:
     def test_invalid_categorical_features_type(self):
         """Non-list categorical_features raises appropriate error."""
-        imputer = MixedTypeImputer(categorical_features="not_a_list")
+        imputer = MixedImputer(categorical_features="not_a_list")
         df = pd.DataFrame({"x": [1.0, np.nan]})
         # This may not error at init, but should be caught somewhere
         # For now, check that it doesn't crash terribly
@@ -349,7 +349,7 @@ class TestParameterValidation:
 
     def test_negative_max_iter(self):
         """Negative max_iter should still work (0 rounds)."""
-        imputer = MixedTypeImputer(max_iter=0, random_state=42)
+        imputer = MixedImputer(max_iter=0, random_state=42)
         df = pd.DataFrame({"x": [1.0, np.nan, 3.0]})
         result = imputer.fit_transform(df)
         assert result.shape == df.shape
@@ -362,16 +362,16 @@ class TestParameterValidation:
 class TestReproducibility:
     def test_same_seed_same_result(self, simple_df):
         """Same random_state gives identical results."""
-        imputer1 = MixedTypeImputer(random_state=42)
-        imputer2 = MixedTypeImputer(random_state=42)
+        imputer1 = MixedImputer(random_state=42)
+        imputer2 = MixedImputer(random_state=42)
         res1 = imputer1.fit_transform(simple_df)
         res2 = imputer2.fit_transform(simple_df)
         pd.testing.assert_frame_equal(res1, res2)
 
     def test_different_seed_may_differ(self, simple_df):
         """Different random_states may produce different results (check no crash)."""
-        imputer1 = MixedTypeImputer(random_state=42)
-        imputer2 = MixedTypeImputer(random_state=99)
+        imputer1 = MixedImputer(random_state=42)
+        imputer2 = MixedImputer(random_state=99)
         res1 = imputer1.fit_transform(simple_df)
         res2 = imputer2.fit_transform(simple_df)
         # Both should have no NaNs and same shape
@@ -386,13 +386,13 @@ class TestReproducibility:
 
 class TestPipelineIntegration:
     def test_pipeline_runs(self, simple_df):
-        """Check that MixedTypeImputer works in a sklearn Pipeline."""
+        """Check that MixedImputer works in a sklearn Pipeline."""
         # For pipeline to work, we need to select numeric columns
         # since StandardScaler doesn't handle strings.
         # Use a simple DataFrame with only numeric columns for pipeline test.
         df_num = simple_df[["age", "income"]]
         pipe = Pipeline([
-            ("imputer", MixedTypeImputer(random_state=42)),
+            ("imputer", MixedImputer(random_state=42)),
             ("scaler", StandardScaler()),
         ])
         result = pipe.fit_transform(df_num)
@@ -407,7 +407,7 @@ class TestPipelineIntegration:
 class TestCategoricalDtype:
     def test_categorical_dtype_input(self, int_cat_df):
         """Category-typed columns are handled correctly."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(int_cat_df)
         assert not result.isnull().any().any()
         # Categories should be preserved as valid values
@@ -416,7 +416,7 @@ class TestCategoricalDtype:
 
     def test_add_indicator(self, simple_df):
         """add_indicator=True doesn't break things."""
-        imputer = MixedTypeImputer(add_indicator=True, random_state=42)
+        imputer = MixedImputer(add_indicator=True, random_state=42)
         result = imputer.fit_transform(simple_df)
         # May have additional indicator columns
         assert result.shape[0] == simple_df.shape[0]
@@ -429,7 +429,7 @@ class TestCategoricalDtype:
 class TestVersion:
     def test_version_accessible(self):
         """__version__ is a string."""
-        from mixed_imputer import __version__
+        from mixedimputer import __version__
         assert isinstance(__version__, str)
         assert __version__ == "0.1.0"
 
@@ -447,7 +447,7 @@ class TestArrayOutput:
         X[2, 1] = np.nan
         X[:, 2] = (X[:, 2] > 0.5).astype(float)
 
-        imputer = MixedTypeImputer(categorical_features=[2], random_state=42)
+        imputer = MixedImputer(categorical_features=[2], random_state=42)
         result = imputer.fit_transform(X)
         assert isinstance(result, np.ndarray)
         assert result.shape == X.shape
@@ -462,7 +462,7 @@ class TestArrayOutput:
         # Columns 0, 2 are numeric; column 1 is categorical
         X[:, 1] = (X[:, 1] > 0.5).astype(float)
 
-        imputer = MixedTypeImputer(categorical_features=[1], random_state=42)
+        imputer = MixedImputer(categorical_features=[1], random_state=42)
         result = imputer.fit_transform(X)
         # Column 1 should still contain 0/1 values (categorical)
         unique_vals = np.unique(result[:, 1])
@@ -477,7 +477,7 @@ class TestCustomEstimators:
     def test_custom_regressor(self, simple_df):
         """Custom regressor is used for numeric columns."""
         from sklearn.linear_model import BayesianRidge
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             regressor=BayesianRidge(),
             random_state=42,
         )
@@ -487,7 +487,7 @@ class TestCustomEstimators:
     def test_custom_classifier(self, simple_df):
         """Custom classifier is used for categorical columns."""
         from sklearn.ensemble import RandomForestClassifier
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             classifier=RandomForestClassifier(random_state=42),
             random_state=42,
         )
@@ -498,7 +498,7 @@ class TestCustomEstimators:
         """Both regressor and classifier can be customized."""
         from sklearn.linear_model import BayesianRidge
         from sklearn.ensemble import RandomForestClassifier
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             regressor=BayesianRidge(),
             classifier=RandomForestClassifier(random_state=42),
             random_state=42,
@@ -514,13 +514,13 @@ class TestCustomEstimators:
 class TestInitialStrategy:
     def test_median_strategy(self, simple_df):
         """initial_strategy='median' works."""
-        imputer = MixedTypeImputer(initial_strategy="median", random_state=42)
+        imputer = MixedImputer(initial_strategy="median", random_state=42)
         result = imputer.fit_transform(simple_df)
         assert not result.isnull().any().any()
 
     def test_most_frequent_strategy(self, simple_df):
         """initial_strategy='most_frequent' works."""
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             initial_strategy="most_frequent", random_state=42
         )
         result = imputer.fit_transform(simple_df)
@@ -528,7 +528,7 @@ class TestInitialStrategy:
 
     def test_constant_strategy(self, simple_df):
         """initial_strategy='constant' with fill_value=0 works."""
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             initial_strategy="constant",
             random_state=42,
         )
@@ -545,7 +545,7 @@ class TestInitialStrategy:
 class TestKeepEmptyFeatures:
     def test_keep_empty_features_false_drops_column(self, all_missing_col_df):
         """Default keep_empty_features=False drops all-missing columns."""
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             keep_empty_features=False,
             random_state=42,
         )
@@ -556,7 +556,7 @@ class TestKeepEmptyFeatures:
 
     def test_keep_empty_features_true(self, all_missing_col_df):
         """keep_empty_features=True keeps all-missing columns."""
-        imputer = MixedTypeImputer(
+        imputer = MixedImputer(
             keep_empty_features=True,
             random_state=42,
         )
@@ -572,7 +572,7 @@ class TestKeepEmptyFeatures:
 class TestFitReturnsSelf:
     def test_fit_returns_self(self, simple_df):
         """fit() returns the imputer instance."""
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit(simple_df)
         assert result is imputer
 
@@ -588,7 +588,7 @@ class TestIndexPreservation:
             {"x": [1.0, np.nan, 3.0], "y": ["a", "b", np.nan]},
             index=[10, 20, 30],
         )
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(df)
         assert list(result.index) == [10, 20, 30]
 
@@ -598,7 +598,7 @@ class TestIndexPreservation:
             {"x": [1.0, np.nan, 3.0], "y": ["a", "b", np.nan]},
             index=["row_a", "row_b", "row_c"],
         )
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         result = imputer.fit_transform(df)
         assert list(result.index) == ["row_a", "row_b", "row_c"]
 
@@ -626,7 +626,7 @@ class TestUnknownCategories:
             "num": [4.0, np.nan, 6.0],
         })
 
-        imputer = MixedTypeImputer(random_state=42)
+        imputer = MixedImputer(random_state=42)
         imputer.fit(df_fit)
         result = imputer.transform(df_transform)
         assert result.shape == df_transform.shape
@@ -639,10 +639,10 @@ class TestUnknownCategories:
 class TestAddIndicatorOutput:
     def test_add_indicator_columns_present(self, simple_df):
         """add_indicator=True adds missing indicator columns."""
-        imputer = MixedTypeImputer(add_indicator=True, random_state=42)
+        imputer = MixedImputer(add_indicator=True, random_state=42)
         result = imputer.fit_transform(simple_df)
         # When add_indicator=True, IterativeImputer appends indicator columns
-        # However, MixedTypeImputer rebuilds the DataFrame from original columns,
+        # However, MixedImputer rebuilds the DataFrame from original columns,
         # so indicators may not be forwarded.  At minimum, shape[0] must match.
         assert result.shape[0] == simple_df.shape[0]
         assert not result.isnull().any().any()
@@ -667,43 +667,43 @@ class TestRegressorCompatibility:
     # -- Linear models --
     def test_linear_regression(self, mixed_data):
         from sklearn.linear_model import LinearRegression
-        r = MixedTypeImputer(regressor=LinearRegression(), max_iter=5, random_state=42)
+        r = MixedImputer(regressor=LinearRegression(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_bayesian_ridge(self, mixed_data):
         from sklearn.linear_model import BayesianRidge
-        r = MixedTypeImputer(regressor=BayesianRidge(), max_iter=5, random_state=42)
+        r = MixedImputer(regressor=BayesianRidge(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_ridge(self, mixed_data):
         from sklearn.linear_model import Ridge
-        r = MixedTypeImputer(regressor=Ridge(), max_iter=5, random_state=42)
+        r = MixedImputer(regressor=Ridge(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_lasso(self, mixed_data):
         from sklearn.linear_model import Lasso
-        r = MixedTypeImputer(regressor=Lasso(), max_iter=5, random_state=42)
+        r = MixedImputer(regressor=Lasso(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_elastic_net(self, mixed_data):
         from sklearn.linear_model import ElasticNet
-        r = MixedTypeImputer(regressor=ElasticNet(), max_iter=5, random_state=42)
+        r = MixedImputer(regressor=ElasticNet(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_huber(self, mixed_data):
         from sklearn.linear_model import HuberRegressor
-        r = MixedTypeImputer(regressor=HuberRegressor(), max_iter=5, random_state=42)
+        r = MixedImputer(regressor=HuberRegressor(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_sgd(self, mixed_data):
         from sklearn.linear_model import SGDRegressor
-        r = MixedTypeImputer(regressor=SGDRegressor(random_state=0), max_iter=5, random_state=42)
+        r = MixedImputer(regressor=SGDRegressor(random_state=0), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     # -- Ensemble models --
     def test_random_forest_regressor(self, mixed_data):
         from sklearn.ensemble import RandomForestRegressor
-        r = MixedTypeImputer(
+        r = MixedImputer(
             regressor=RandomForestRegressor(n_estimators=20, random_state=0),
             max_iter=5, random_state=42,
         )
@@ -711,7 +711,7 @@ class TestRegressorCompatibility:
 
     def test_gradient_boosting_regressor(self, mixed_data):
         from sklearn.ensemble import GradientBoostingRegressor
-        r = MixedTypeImputer(
+        r = MixedImputer(
             regressor=GradientBoostingRegressor(n_estimators=20, random_state=0),
             max_iter=5, random_state=42,
         )
@@ -719,7 +719,7 @@ class TestRegressorCompatibility:
 
     def test_extra_trees_regressor(self, mixed_data):
         from sklearn.ensemble import ExtraTreesRegressor
-        r = MixedTypeImputer(
+        r = MixedImputer(
             regressor=ExtraTreesRegressor(n_estimators=20, random_state=0),
             max_iter=5, random_state=42,
         )
@@ -727,7 +727,7 @@ class TestRegressorCompatibility:
 
     def test_decision_tree_regressor(self, mixed_data):
         from sklearn.tree import DecisionTreeRegressor
-        r = MixedTypeImputer(
+        r = MixedImputer(
             regressor=DecisionTreeRegressor(random_state=0),
             max_iter=5, random_state=42,
         )
@@ -736,12 +736,12 @@ class TestRegressorCompatibility:
     # -- Posterior sampling with regressors --
     def test_posterior_sampling_linear(self, mixed_data):
         from sklearn.linear_model import Ridge
-        r = MixedTypeImputer(regressor=Ridge(), sample_posterior=True, max_iter=5, random_state=42)
+        r = MixedImputer(regressor=Ridge(), sample_posterior=True, max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_posterior_sampling_random_forest(self, mixed_data):
         from sklearn.ensemble import RandomForestRegressor
-        r = MixedTypeImputer(
+        r = MixedImputer(
             regressor=RandomForestRegressor(n_estimators=20, random_state=0),
             sample_posterior=True, max_iter=5, random_state=42,
         )
@@ -766,7 +766,7 @@ class TestClassifierCompatibility:
 
     def test_random_forest_classifier(self, mixed_data):
         from sklearn.ensemble import RandomForestClassifier
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=RandomForestClassifier(n_estimators=20, random_state=0),
             max_iter=5, random_state=42,
         )
@@ -774,7 +774,7 @@ class TestClassifierCompatibility:
 
     def test_gradient_boosting_classifier(self, mixed_data):
         from sklearn.ensemble import GradientBoostingClassifier
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=GradientBoostingClassifier(n_estimators=20, random_state=0),
             max_iter=5, random_state=42,
         )
@@ -782,7 +782,7 @@ class TestClassifierCompatibility:
 
     def test_extra_trees_classifier(self, mixed_data):
         from sklearn.ensemble import ExtraTreesClassifier
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=ExtraTreesClassifier(n_estimators=20, random_state=0),
             max_iter=5, random_state=42,
         )
@@ -790,7 +790,7 @@ class TestClassifierCompatibility:
 
     def test_logistic_regression(self, mixed_data):
         from sklearn.linear_model import LogisticRegression
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=LogisticRegression(random_state=0, max_iter=1000),
             max_iter=5, random_state=42,
         )
@@ -798,12 +798,12 @@ class TestClassifierCompatibility:
 
     def test_ridge_classifier(self, mixed_data):
         from sklearn.linear_model import RidgeClassifier
-        r = MixedTypeImputer(classifier=RidgeClassifier(), max_iter=5, random_state=42)
+        r = MixedImputer(classifier=RidgeClassifier(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     def test_knn_classifier(self, mixed_data):
         from sklearn.neighbors import KNeighborsClassifier
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=KNeighborsClassifier(n_neighbors=3),
             max_iter=5, random_state=42,
         )
@@ -811,7 +811,7 @@ class TestClassifierCompatibility:
 
     def test_decision_tree_classifier(self, mixed_data):
         from sklearn.tree import DecisionTreeClassifier
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=DecisionTreeClassifier(random_state=0),
             max_iter=5, random_state=42,
         )
@@ -819,13 +819,13 @@ class TestClassifierCompatibility:
 
     def test_gaussian_nb(self, mixed_data):
         from sklearn.naive_bayes import GaussianNB
-        r = MixedTypeImputer(classifier=GaussianNB(), max_iter=5, random_state=42)
+        r = MixedImputer(classifier=GaussianNB(), max_iter=5, random_state=42)
         assert not r.fit_transform(mixed_data).isnull().any().any()
 
     # -- Posterior sampling with classifiers --
     def test_posterior_sampling_logistic(self, mixed_data):
         from sklearn.linear_model import LogisticRegression
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=LogisticRegression(random_state=0, max_iter=1000),
             sample_posterior=True, max_iter=5, random_state=42,
         )
@@ -833,7 +833,7 @@ class TestClassifierCompatibility:
 
     def test_posterior_sampling_random_forest_clf(self, mixed_data):
         from sklearn.ensemble import RandomForestClassifier
-        r = MixedTypeImputer(
+        r = MixedImputer(
             classifier=RandomForestClassifier(n_estimators=20, random_state=0),
             sample_posterior=True, max_iter=5, random_state=42,
         )

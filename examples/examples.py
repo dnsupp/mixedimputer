@@ -1,4 +1,4 @@
-"""Examples of MixedTypeImputer usage.
+"""Examples of MixedImputer usage.
 
 Run with:
     pip install -e .
@@ -7,7 +7,7 @@ Run with:
 
 import numpy as np
 import pandas as pd
-from mixed_imputer import MixedTypeImputer
+from mixedimputer import MixedImputer
 
 
 # =========================================================================
@@ -33,7 +33,7 @@ data = pd.DataFrame({
     "gender": ["M", "F", "M", np.nan, "F"],
 })
 
-imputer = MixedTypeImputer(max_iter=5, random_state=42)
+imputer = MixedImputer(max_iter=5, random_state=42)
 imputed = imputer.fit_transform(data)
 
 print("Original (with NaNs):")
@@ -51,7 +51,7 @@ print(f"Auto-detected categoricals: {imputer.categorical_features}")
 # =========================================================================
 section("2. Explicit categorical_features")
 
-imputer2 = MixedTypeImputer(
+imputer2 = MixedImputer(
     categorical_features=["city", "gender"],
     max_iter=5,
     random_state=99,
@@ -65,11 +65,11 @@ print(imputed2.to_string())
 # =========================================================================
 section("3. Posterior sampling (sample_posterior=True)")
 
-imputer3 = MixedTypeImputer(sample_posterior=True, max_iter=5, random_state=42)
+imputer3 = MixedImputer(sample_posterior=True, max_iter=5, random_state=42)
 imputed3a = imputer3.fit_transform(data)
 
 # Running again with a different seed shows variation
-imputer3b = MixedTypeImputer(
+imputer3b = MixedImputer(
     sample_posterior=True, max_iter=5, random_state=123
 )
 imputed3b = imputer3b.fit_transform(data)
@@ -89,7 +89,7 @@ section("4. Custom regressor & classifier")
 from sklearn.linear_model import BayesianRidge
 from sklearn.ensemble import RandomForestClassifier
 
-imputer4 = MixedTypeImputer(
+imputer4 = MixedImputer(
     regressor=BayesianRidge(),
     classifier=RandomForestClassifier(random_state=0),
     max_iter=5,
@@ -112,7 +112,7 @@ X_arr[5, 3] = np.nan
 # Make column 3 categorical (0 or 1)
 X_arr[:, 3] = (X_arr[:, 3] > 0.5).astype(float)
 
-imputer5 = MixedTypeImputer(
+imputer5 = MixedImputer(
     categorical_features=[3],
     max_iter=5,
     random_state=42,
@@ -139,7 +139,7 @@ from sklearn.preprocessing import StandardScaler
 df_num = data[["age", "income"]]
 
 pipe = Pipeline([
-    ("imputer", MixedTypeImputer(max_iter=5, random_state=42)),
+    ("imputer", MixedImputer(max_iter=5, random_state=42)),
     ("scaler", StandardScaler()),
 ])
 pipe_result = pipe.fit_transform(df_num)
@@ -153,7 +153,7 @@ print(pipe_result[:3])
 section("7. Different initial_strategy values")
 
 for strat in ["mean", "median", "most_frequent"]:
-    imputer_s = MixedTypeImputer(
+    imputer_s = MixedImputer(
         initial_strategy=strat, max_iter=5, random_state=42
     )
     imputed_s = imputer_s.fit_transform(data)
@@ -170,7 +170,7 @@ df_all_num = pd.DataFrame({
     "x": [1.0, np.nan, 3.0, 4.0, np.nan],
     "y": [np.nan, 2.0, np.nan, 4.0, 5.0],
 })
-imputer8 = MixedTypeImputer(max_iter=5, random_state=42)
+imputer8 = MixedImputer(max_iter=5, random_state=42)
 imputed8 = imputer8.fit_transform(df_all_num)
 print(imputed8.to_string())
 print(f"\nCategorical features: {imputer8.categorical_features}")
@@ -185,7 +185,7 @@ df_all_cat = pd.DataFrame({
     "color": ["red", "blue", np.nan, "red", "green"],
     "size":  ["S", np.nan, "M", "L", "M"],
 })
-imputer9 = MixedTypeImputer(max_iter=5, random_state=42)
+imputer9 = MixedImputer(max_iter=5, random_state=42)
 imputed9 = imputer9.fit_transform(df_all_cat)
 print(imputed9.to_string())
 print(f"\nCategorical features: {imputer9.categorical_features}")
@@ -203,12 +203,12 @@ df_miss = pd.DataFrame({
 })
 
 # keep_empty_features=False (default) — drops all-NaN columns
-imputer10a = MixedTypeImputer(keep_empty_features=False, random_state=42)
+imputer10a = MixedImputer(keep_empty_features=False, random_state=42)
 result10a = imputer10a.fit_transform(df_miss)
 print("keep_empty_features=False  →  columns:", list(result10a.columns))
 
 # keep_empty_features=True — keeps them
-imputer10b = MixedTypeImputer(keep_empty_features=True, random_state=42)
+imputer10b = MixedImputer(keep_empty_features=True, random_state=42)
 result10b = imputer10b.fit_transform(df_miss)
 print("keep_empty_features=True   →  columns:", list(result10b.columns))
 
@@ -222,7 +222,7 @@ df_cat = pd.DataFrame({
     "value": [1.0, np.nan, 3.0, 4.0],
     "group": pd.Categorical(["A", "B", np.nan, "A"]),
 })
-imputer11 = MixedTypeImputer(max_iter=3, random_state=42)
+imputer11 = MixedImputer(max_iter=3, random_state=42)
 imputed11 = imputer11.fit_transform(df_cat)
 print(imputed11.to_string())
 print()
@@ -235,8 +235,8 @@ print("group values:", imputed11["group"].tolist())
 # =========================================================================
 section("12. Reproducibility with random_state")
 
-imputer_a = MixedTypeImputer(random_state=42)
-imputer_b = MixedTypeImputer(random_state=42)
+imputer_a = MixedImputer(random_state=42)
+imputer_b = MixedImputer(random_state=42)
 
 result_a = imputer_a.fit_transform(data)
 result_b = imputer_b.fit_transform(data)
