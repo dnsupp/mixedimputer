@@ -16,6 +16,7 @@ It automatically detects column types, encodes categoricals with `OrdinalEncoder
 - **Posterior sampling** — supports stochastic imputation via `sample_posterior=True`
 - **scikit-learn compatible** — `fit` / `transform` / `fit_transform` API, works in `Pipeline`
 - **DataFrame-native** — input a DataFrame, get a DataFrame back
+- **Data corruption utility** — includes a `DataCorrupter` class for benchmarking: introduce MCAR, MAR, or MNAR missing values into datasets (supports .csv, .xlsx, .arff)
 
 ## Installation
 
@@ -138,6 +139,57 @@ limited to the defaults.  Tested and known to work:
 pip install -e ".[dev]"
 pytest
 ```
+
+The test suite includes:
+
+- **Imputer unit tests** — verify core functionality, edge cases, reproducibility, and pipeline compatibility.
+- **Corruption tests** — verify the `DataCorrupter` with all three missing-data mechanisms (MCAR, MAR, MNAR) on synthetic and real datasets.
+- **End-to-end benchmarks** — corrupt real datasets (`titanic.csv`, `credit-g.arff`) and evaluate imputation accuracy against naive baselines (mean/mode).
+
+All tests pass on the included `data/titanic.csv` and `data/credit-g.arff` datasets.
+
+## Benchmarking with Corrupted Data
+
+To evaluate imputation quality on real datasets, use the bundled `DataCorrupter`
+to introduce controlled missing values before imputing:
+
+```python
+from mixedimputer import DataCorrupter, MixedImputer
+
+# Load and corrupt a dataset — 2 numeric + 2 nominal columns, 10% MCAR
+corrupter = DataCorrupter(
+    mechanism="MCAR",
+    corruption_fraction=0.10,
+    num_numeric=2,
+    num_nominal=2,
+    random_state=42,
+)
+corrupted, mask, original = corrupter.corrupt("data/titanic.csv")
+# corrupted : DataFrame with NaN at chosen positions
+# mask      : boolean DataFrame marking corrupted cells
+# original  : pristine copy for comparison
+
+# Impute with the MixedImputer
+imputer = MixedImputer(max_iter=10, random_state=42)
+imputed = imputer.fit_transform(corrupted)
+
+# Compare imputed values against ground truth
+from sklearn.metrics import mean_squared_error
+numeric_col = "Age"
+rmse = mean_squared_error(
+    original.loc[mask[numeric_col], numeric_col],
+    imputed.loc[mask[numeric_col], numeric_col],
+) ** 0.5
+print(f"RMSE on corrupted Age values: {rmse:.2f}")
+```
+
+The `DataCorrupter` supports:
+- **Three mechanisms**: MCAR (uniform random), MAR (dependent on other columns), MNAR (dependent on the column's own values)
+- **Column selection**: by count (`num_numeric=3, num_nominal=2`), by name (`numeric_columns=["Age", "Fare"]`), or random (`num_random_columns=5`)
+- **Per-column fractions**: e.g. `corruption_fraction={"Age": 0.05, "Fare": 0.20}`
+- **File formats**: `.csv`, `.xlsx`, `.arff`, or an existing DataFrame
+
+For a complete pipeline example see [`examples/example.py`](examples/example.py).
 
 ## Examples
 
