@@ -1,5 +1,5 @@
 """
-Mixed-type MICE imputer for scikit-learn.
+Mixed-type MICE-style iterative imputer for scikit-learn.
 
 Provides a single ``MixedImputer`` transformer that handles DataFrames
 containing both numerical and categorical (string) columns.  Internally it

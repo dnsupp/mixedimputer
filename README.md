@@ -8,11 +8,11 @@ It automatically detects column types, encodes categoricals with `OrdinalEncoder
 
 ## Features
 
-- **Wrapper for IterativeImputer** — builds on sklearn's experimental `IterativeImputer` (MICE), inheriting its battle-tested convergence logic while adding mixed-type support
+- **Wrapper for IterativeImputer** — builds on sklearn's experimental `IterativeImputer` (inspired by MICE), inheriting its battle-tested convergence logic while adding mixed-type support
 - **Mixed-type support** — handles numeric and string categorical columns in the same DataFrame
 - **Binary & multiclass classification** — categorical columns with 2, 3, or more classes are supported; the classifier automatically adapts to any number of unique categories
 - **Auto-detection** — automatically identifies categorical columns by dtype (object/category/string)
-- **Iterative imputation (MICE)** — models each column as a function of all others
+- **Iterative imputation (MICE-style)** — models each column as a function of all others
 - **Posterior sampling** — supports stochastic imputation via `sample_posterior=True`
 - **scikit-learn compatible** — `fit` / `transform` / `fit_transform` API, works in `Pipeline`
 - **DataFrame-native** — input a DataFrame, get a DataFrame back
@@ -102,7 +102,7 @@ imputed = imputer.fit_transform(data)
 
 1. **Column detection** — object/string/category dtype columns are identified as categorical; the rest as numeric.
 2. **Encoding** — categorical columns are encoded to integers using `OrdinalEncoder`, with NaN replaced by a sentinel value so the imputer sees them as truly missing.
-3. **Iterative imputation (MICE)** — a customized `IterativeImputer` uses `HistGradientBoostingRegressor` for numeric columns and `HistGradientBoostingClassifier` for categorical columns (binary or multiclass). The classifier handles any number of unique categories automatically.
+3. **Iterative imputation (MICE-style)** — a customized `IterativeImputer` uses `HistGradientBoostingRegressor` for numeric columns and `HistGradientBoostingClassifier` for categorical columns (binary or multiclass). The classifier handles any number of unique categories automatically.
 4. **Decoding** — imputed integer values are inverse-transformed back to their original string categories.
 
 ## Compatible Estimators
