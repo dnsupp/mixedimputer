@@ -2,7 +2,7 @@
 
 > **MixedImputer is a wrapper around scikit-learn's [`IterativeImputer`](https://scikit-learn.org/stable/modules/generated/sklearn.impute.IterativeImputer.html), which implements an iterative imputation strategy inspired by MICE (Multivariate Imputation by Chained Equations).** It extends it to seamlessly handle DataFrames containing both numerical and categorical (string) columns.
 
-It automatically detects column types, encodes categoricals with `OrdinalEncoder`, runs the iterative MICE engine (powered by sklearn's `IterativeImputer`) with a regressor or classifier chosen per column, und decodes categoricals back to their original string values.
+It automatically detects column types, encodes categoricals with `OrdinalEncoder`, runs the `MixedImputer` (powered by sklearn's `IterativeImputer`) with a regressor or classifier chosen per column, and decodes categoricals back to their original string values.
 
 > **Note:** `IterativeImputer` is an experimental feature in scikit-learn. `MixedImputer` handles the required `enable_iterative_imputer` import internally — just import `MixedImputer` and use it. If you are also importing `IterativeImputer` directly in your own code, make sure to import `MixedImputer` **before** `IterativeImputer`, or explicitly run `from sklearn.experimental import enable_iterative_imputer` first.
 
