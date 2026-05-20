@@ -3,8 +3,8 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mixedimputer"
-version = "1.0.0"
+name = "mixed-imputer"
+version = "0.1.0.post1"
 description = "Mixed-type MICE-style iterative imputer for scikit-learn — handles both numerical and categorical (string) columns in DataFrames."
 readme = "README.md"
 license = {text = "MIT"}
