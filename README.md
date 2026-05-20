@@ -16,6 +16,7 @@ It automatically detects column types, encodes categoricals with `OrdinalEncoder
 - **Posterior sampling** — supports stochastic imputation via `sample_posterior=True`
 - **scikit-learn compatible** — `fit` / `transform` / `fit_transform` API, works in `Pipeline`
 - **DataFrame-native** — input a DataFrame, get a DataFrame back
+- **Time-series imputation (experimental)** — `TimeSeriesImputer` adds lag features, rolling statistics, and time-aware initial fill (forward fill, interpolation) to make iterative imputation temporal-aware
 - **Data corruption utility** — includes a `DataCorrupter` class for benchmarking: introduce MCAR, MAR, or MNAR missing values into datasets (supports .csv, .xlsx, .arff)
 
 ## Installation
@@ -96,6 +97,94 @@ imputed = imputer.fit_transform(data)
 | `add_indicator` | bool | `False` | If `True`, add missing indicator columns. |
 | `keep_empty_features` | bool | `False` | If `True`, keep features that are all-missing at fit time. |
 
+## Time Series Imputation (Experimental)
+
+> **Status: Experimental** — `TimeSeriesImputer` has been verified for functional
+> correctness (22 unit tests pass) but has **not yet been benchmarked** against
+> established time-series imputation methods (e.g., Kalman filters, state-space
+> models, `pandas.interpolate`).  The imputation pipeline works correctly —
+> sorting, lag/rolling feature engineering, initial fill, iterative refinement —
+> but the statistical accuracy of the imputed values on real-world time series
+> has not been quantified.  Use with caution in production and validate results
+> against domain knowledge.
+
+### Why not use `MixedImputer` directly on time series?
+
+`IterativeImputer` treats every row as independent — it models `column_j = f(other columns in same row)`.  It has no concept of temporal ordering and cannot exploit autocorrelation (`value_t` depends on `value_{t-1}, value_{t-2}, ...`).  Using a global mean as the initial fill destroys trends and seasonality.
+
+`TimeSeriesImputer` addresses this by:
+
+1. **Sorting** the data by a user-supplied time column.
+2. **Temporarily forward-filling** NaN values to create clean lag/rolling features.
+3. **Restoring NaN** in the original columns — the imputer then uses the temporal features as predictors to refine the fill.
+4. **Delegating** to `MixedImputer` for the core MICE-style iterative imputation.
+5. **Stripping** engineered features from the output.
+
+### Quick Diagnostic
+
+```python
+from mixedimputer import is_time_series_suitable
+
+report = is_time_series_suitable(df, time_column="timestamp")
+print(report["is_sorted"])       # True if time is monotonic
+print(report["missing_rate"])     # fraction of missing values
+print(report["recommendation"])   # human-readable advice
+```
+
+### Quick Start
+
+```python
+import pandas as pd
+import numpy as np
+from mixedimputer import TimeSeriesImputer
+
+# Sensor readings with missing values
+df = pd.DataFrame({
+    'timestamp': pd.date_range('2024-01-01', periods=100, freq='h'),
+    'temperature': [20.1, 20.3, np.nan, np.nan, 21.0, ...],
+    'humidity':    [55, 57, np.nan, 60, np.nan, ...],
+    'sensor_status': ['OK', 'OK', np.nan, 'WARN', 'OK', ...],
+})
+
+imputer = TimeSeriesImputer(
+    time_column='timestamp',
+    lags=[1, 2, 3],               # create t-1, t-2, t-3 lag features
+    rolling_windows=[6, 12],       # 6h and 12h rolling means
+    initial_strategy='forward_fill',  # time-aware initial fill
+    random_state=42,
+)
+imputed = imputer.fit_transform(df)
+# Result contains only original columns — lag/rolling features are stripped
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `time_column` | str or int | *(required)* | Column name or index identifying the time/ordering dimension. Must be numeric or datetime. |
+| `lags` | list of int | `[1, 2, 3]` | Lag steps for creating lag features per numeric column. Set to `[]` to disable. |
+| `rolling_windows` | list of int | `None` | Window sizes for rolling-mean features per numeric column. Set to `[]` to disable. |
+| `initial_strategy` | str | `"forward_fill"` | Time-aware initial fill: `"forward_fill"` / `"ffill"`, `"backward_fill"` / `"bfill"`, `"linear"`, `"spline"`, or standard strategies (`"mean"`, `"median"`, `"most_frequent"`, `"constant"`). |
+| `imputer` | MixedImputer or None | `None` | Pre-configured `MixedImputer` for custom regressor/classifier. If `None`, a default is created. |
+| `categorical_features` | list of str/int or None | `None` | Passed through to `MixedImputer`. Auto-detected if `None`. |
+| `max_iter` | int | `10` | Maximum imputation rounds (passed to `MixedImputer`). |
+| `tol` | float | `1e-3` | Early-stopping tolerance (passed to `MixedImputer`). |
+| `sample_posterior` | bool | `False` | Posterior sampling for stochastic imputation (passed to `MixedImputer`). |
+| `random_state` | int or None | `None` | Seed for reproducibility. |
+| `verbose` | int | `0` | Verbosity level. |
+
+### Known Limitations
+
+- **Not benchmarked** — functional correctness is verified, but imputation accuracy
+  on real time series (e.g., financial, weather, sensor data) has not been
+  quantified.  Validate against domain knowledge before production use.
+- **Irregular time steps** — the diagnostic can detect gaps, but `TimeSeriesImputer`
+  does not automatically resample.  Resample to a regular frequency first.
+- **Lag features create NaN at the start** of each series (the first `max(lag)` rows
+  have no history).  These are filled by `MixedImputer`'s initial strategy.
+- **Only numeric lags** — lag and rolling features are created for numeric columns
+  only.  Categorical columns are imputed using cross-sectional correlations.
+
 ## How It Works
 
 `MixedImputer` is a thin wrapper that orchestrates sklearn's `IterativeImputer` for mixed-type DataFrames:
@@ -143,6 +232,7 @@ pytest
 The test suite includes:
 
 - **Imputer unit tests** — verify core functionality, edge cases, reproducibility, and pipeline compatibility.
+- **Time-series imputer tests** — 22 tests covering sorting, lag/rolling features, initial fill strategies, categorical handling, edge cases, and diagnostic function.
 - **Corruption tests** — verify the `DataCorrupter` with all three missing-data mechanisms (MCAR, MAR, MNAR) on synthetic and real datasets.
 - **End-to-end benchmarks** — corrupt real datasets (`titanic.csv`, `credit-g.arff`) and evaluate imputation accuracy against naive baselines (mean/mode).
 
@@ -199,6 +289,7 @@ input, pipeline integration, and edge cases.
 
 ## Known Limitations
 
+- **`TimeSeriesImputer` is experimental** — see the [Time Series section](#time-series-imputation-experimental) for details on what is and isn't verified.
 - **Unseen categories at transform time** are encoded to the `unknown_value` of
   the `OrdinalEncoder`.  If the imputer assigns a value that decodes to an
   unknown category it will appear as `NaN` in the output.  Ensure the training
