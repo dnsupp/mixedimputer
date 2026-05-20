@@ -80,7 +80,7 @@ imputer = MixedImputer(
 imputed = imputer.fit_transform(data)
 ```
 
-## Parameters
+## MixedImputer Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -131,7 +131,7 @@ print(report["missing_rate"])     # fraction of missing values
 print(report["recommendation"])   # human-readable advice
 ```
 
-### Quick Start
+### Quick Start (Time Series)
 
 ```python
 import pandas as pd
@@ -141,9 +141,9 @@ from mixedimputer import TimeSeriesImputer
 # Sensor readings with missing values
 df = pd.DataFrame({
     'timestamp': pd.date_range('2024-01-01', periods=100, freq='h'),
-    'temperature': [20.1, 20.3, np.nan, np.nan, 21.0, ...],
-    'humidity':    [55, 57, np.nan, 60, np.nan, ...],
-    'sensor_status': ['OK', 'OK', np.nan, 'WARN', 'OK', ...],
+    'temperature': [20.1, 20.3, np.nan, np.nan, 21.0] + [np.nan] * 95,
+    'humidity':    [55, 57, np.nan, 60, np.nan] + [np.nan] * 95,
+    'sensor_status': ['OK', 'OK', np.nan, 'WARN', 'OK'] + [np.nan] * 95,
 })
 
 imputer = TimeSeriesImputer(
@@ -157,23 +157,41 @@ imputed = imputer.fit_transform(df)
 # Result contains only original columns — lag/rolling features are stripped
 ```
 
-### Parameters
+### TimeSeriesImputer Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `time_column` | str or int | *(required)* | Column name or index identifying the time/ordering dimension. Must be numeric or datetime. |
 | `lags` | list of int | `[1, 2, 3]` | Lag steps for creating lag features per numeric column. Set to `[]` to disable. |
 | `rolling_windows` | list of int | `None` | Window sizes for rolling-mean features per numeric column. Set to `[]` to disable. |
-| `initial_strategy` | str | `"forward_fill"` | Time-aware initial fill: `"forward_fill"` / `"ffill"`, `"backward_fill"` / `"bfill"`, `"linear"`, `"spline"`, or standard strategies (`"mean"`, `"median"`, `"most_frequent"`, `"constant"`). |
-| `imputer` | MixedImputer or None | `None` | Pre-configured `MixedImputer` for custom regressor/classifier. If `None`, a default is created. |
-| `categorical_features` | list of str/int or None | `None` | Passed through to `MixedImputer`. Auto-detected if `None`. |
+| `initial_strategy` | str | `"forward_fill"` | Time-aware fill used **temporarily** to build clean lag/rolling features: `"forward_fill"` / `"ffill"`, `"backward_fill"` / `"bfill"`, `"linear"`, `"spline"`, or standard strategies (`"mean"`, `"median"`, `"most_frequent"`, `"constant"`). After lag features are constructed, NaN is restored in original columns and `MixedImputer` refines the fill via iterative regression. |
+| `imputer` | MixedImputer or None | `None` | Pre-configured `MixedImputer` for custom regressor/classifier. If `None`, a default is created. Use this to set `regressor`, `classifier`, `add_indicator`, `keep_empty_features` or other MixedImputer-specific options. |
+| `categorical_features` | list of str/int or None | `None` | Column names/indices of categorical features. Used internally to skip lag/rolling creation for non-numeric columns, then passed through to `MixedImputer`. Auto-detected from dtype if `None`. |
+| `numeric_features` | list of str/int or None | `None` | Column names/indices of numeric features that receive lag/rolling features. If `None`, auto-detected as all numeric columns (excluding `time_column` and categoricals). |
 | `max_iter` | int | `10` | Maximum imputation rounds (passed to `MixedImputer`). |
 | `tol` | float | `1e-3` | Early-stopping tolerance (passed to `MixedImputer`). |
 | `sample_posterior` | bool | `False` | Posterior sampling for stochastic imputation (passed to `MixedImputer`). |
 | `random_state` | int or None | `None` | Seed for reproducibility. |
 | `verbose` | int | `0` | Verbosity level. |
 
-### Known Limitations
+> **Note on `initial_strategy`:** Unlike `MixedImputer` where `initial_strategy`
+> controls the first-pass fill before iterative refinement, `TimeSeriesImputer`
+> uses its `initial_strategy` only for building clean lag/rolling features.
+> After those features are created, the original NaN positions are restored and
+> the actual imputation is performed by `MixedImputer` using its own
+> `initial_strategy` (default: `"mean"`).  To control the final fill, pass a
+> pre-configured `MixedImputer` via the `imputer=` parameter:
+>
+> ```python
+> from mixedimputer import MixedImputer, TimeSeriesImputer
+>
+> imputer = TimeSeriesImputer(
+>     time_column="timestamp",
+>     imputer=MixedImputer(initial_strategy="median", max_iter=20),
+> )
+> ```
+
+### Known Limitations (Time Series)
 
 - **Not benchmarked** — functional correctness is verified, but imputation accuracy
   on real time series (e.g., financial, weather, sensor data) has not been
