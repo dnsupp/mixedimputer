@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mixedimputer import MixedImputer, DataCorrupter
+from mixedimputer import MixedImputer
+from mixedimputer.corrupt_data import DataCorrupter
 from mixedimputer.corrupt_data import (
     _detect_nominal_columns,
     _detect_numeric_columns,
