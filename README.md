@@ -1,6 +1,9 @@
 <p align="center">
-  <a href="https://github.com/dnsupp/mixed-imputer">
+  <a href="https://github.com/dnsupp/mixedimputer">
     <img src="https://img.shields.io/badge/github-repo-blue?logo=github" alt="GitHub Repo">
+  </a>
+  <a href="https://github.com/dnsupp/mixedimputer/actions/workflows/tests.yml">
+    <img src="https://github.com/dnsupp/mixedimputer/actions/workflows/tests.yml/badge.svg" alt="Tests">
   </a>
 </p>
 
@@ -240,7 +243,7 @@ limited to the defaults.  Tested and known to work:
 
 ## Requirements
 
-- Python ≥ 3.9
+- Python ≥ 3.10
 - numpy
 - pandas
 - scipy
