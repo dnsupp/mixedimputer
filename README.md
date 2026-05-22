@@ -22,7 +22,7 @@ It automatically detects column types, encodes categoricals with `OrdinalEncoder
 ## Installation
 
 ```bash
-pip install mixedimputer
+pip install mixed-imputer
 ```
 
 Or for development:
