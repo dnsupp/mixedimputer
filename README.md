@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://github.com/dnsupp/mixed-imputer">
+    <img src="https://img.shields.io/badge/github-repo-blue?logo=github" alt="GitHub Repo">
+  </a>
+</p>
+
 # MixedImputer
 
 > **MixedImputer is a wrapper around scikit-learn's [`IterativeImputer`](https://scikit-learn.org/stable/modules/generated/sklearn.impute.IterativeImputer.html), which implements an iterative imputation strategy inspired by MICE (Multivariate Imputation by Chained Equations).** It extends it to seamlessly handle DataFrames containing both numerical and categorical (string) columns.
