@@ -36,6 +36,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "pygrinder",
+    "liac-arff",
 ]
 
 [project.urls]
