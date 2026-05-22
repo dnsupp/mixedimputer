@@ -5,6 +5,16 @@
   <a href="https://github.com/dnsupp/mixedimputer/actions/workflows/tests.yml">
     <img src="https://github.com/dnsupp/mixedimputer/actions/workflows/tests.yml/badge.svg" alt="Tests">
   </a>
+  <a href="https://pypi.org/project/mixed-imputer/">
+    <img src="https://img.shields.io/pypi/v/mixed-imputer" alt="PyPI Version">
+  </a>
+  <a href="https://pypi.org/project/mixed-imputer/">
+    <img src="https://img.shields.io/pypi/pyversions/mixed-imputer" alt="Python Versions">
+  </a>
+  <a href="https://github.com/dnsupp/mixedimputer/blob/main/LICENSE">
+    <img src="https://img.shields.io/pypi/l/mixed-imputer" alt="License">
+  </a>
+  
 </p>
 
 # MixedImputer
