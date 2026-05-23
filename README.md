@@ -14,7 +14,6 @@
   <a href="https://github.com/dnsupp/mixedimputer/blob/main/LICENSE">
     <img src="https://img.shields.io/pypi/l/mixed-imputer" alt="License">
   </a>
-  
 </p>
 
 # MixedImputer
