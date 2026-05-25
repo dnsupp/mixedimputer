@@ -274,48 +274,37 @@ The test suite includes:
 
 All tests pass on the included `data/titanic.csv` and `data/credit-g.arff` datasets.
 
-## Benchmarking with Corrupted Data
+## Benchmarks
 
-To evaluate imputation quality on real datasets, use the bundled `DataCorrupter`
-to introduce controlled missing values before imputing:
+MixedImputer and TimeSeriesImputer have been evaluated on real datasets against common baselines (mean/mode imputation, forward-fill) at multiple corruption levels (1%, 10%, 30%).
+
+Key findings:
+- **MixedImputer** reduces numeric RMSE by **48–55%** vs. mean imputation on Titanic, and achieves up to **100% categorical accuracy** at low corruption.
+- **TimeSeriesImputer** outperforms mean imputation by up to **12.8×** on GPU sensor data, and closely tracks the forward-fill baseline for highly autocorrelated signals.
+
+**Full results, methodology, and reproducible notebooks:** [BENCHMARKS.md](BENCHMARKS.md)
+
+### Quick Benchmarking with Corrupted Data
+
+To evaluate imputation quality on your own data, use the bundled `DataCorrupter`:
 
 ```python
 from mixedimputer import DataCorrupter, MixedImputer
 
-# Load and corrupt a dataset — 2 numeric + 2 nominal columns, 10% MCAR
-corrupter = DataCorrupter(
-    mechanism="MCAR",
-    corruption_fraction=0.10,
-    num_numeric=2,
-    num_nominal=2,
-    random_state=42,
-)
+corrupter = DataCorrupter(mechanism="MCAR", corruption_fraction=0.10,
+                          numeric_columns=["Age", "Fare"], random_state=42)
 corrupted, mask, original = corrupter.corrupt("data/titanic.csv")
-# corrupted : DataFrame with NaN at chosen positions
-# mask      : boolean DataFrame marking corrupted cells
-# original  : pristine copy for comparison
 
-# Impute with the MixedImputer
 imputer = MixedImputer(max_iter=10, random_state=42)
 imputed = imputer.fit_transform(corrupted)
 
-# Compare imputed values against ground truth
 from sklearn.metrics import mean_squared_error
-numeric_col = "Age"
-rmse = mean_squared_error(
-    original.loc[mask[numeric_col], numeric_col],
-    imputed.loc[mask[numeric_col], numeric_col],
-) ** 0.5
+rmse = mean_squared_error(original.loc[mask["Age"], "Age"],
+                          imputed.loc[mask["Age"], "Age"]) ** 0.5
 print(f"RMSE on corrupted Age values: {rmse:.2f}")
 ```
 
-The `DataCorrupter` supports:
-- **Three mechanisms**: MCAR (uniform random), MAR (dependent on other columns), MNAR (dependent on the column's own values)
-- **Column selection**: by count (`num_numeric=3, num_nominal=2`), by name (`numeric_columns=["Age", "Fare"]`), or random (`num_random_columns=5`)
-- **Per-column fractions**: e.g. `corruption_fraction={"Age": 0.05, "Fare": 0.20}`
-- **File formats**: `.csv`, `.xlsx`, `.arff`, or an existing DataFrame
-
-For a complete pipeline example see [`examples/example.py`](examples/example.py).
+See [`examples/example.py`](examples/example.py) for a complete pipeline.
 
 ## Examples
 

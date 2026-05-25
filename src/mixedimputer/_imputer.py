@@ -9,18 +9,19 @@ decodes categoricals back to their original string values.
 """
 
 import warnings
+
 import numpy as np
 import pandas as pd
 from scipy import stats
 
 # Unlock experimental feature (must be imported BEFORE IterativeImputer)
-from sklearn.experimental import enable_iterative_imputer  # noqa
+from sklearn.experimental import enable_iterative_imputer  # noqa: E402
 
 from sklearn.base import BaseEstimator, TransformerMixin, clone
-from sklearn.preprocessing import OrdinalEncoder
 from sklearn.impute import IterativeImputer
+from sklearn.preprocessing import OrdinalEncoder
 from sklearn.utils import _safe_indexing
-from sklearn.utils.validation import check_is_fitted, check_array
+from sklearn.utils.validation import check_array, check_is_fitted
 
 
 # ----------------------------------------------------------------------
@@ -497,14 +498,13 @@ class MixedImputer(BaseEstimator, TransformerMixin):
         # Transform to integers and find the encoded value for sentinel
         if self.encoder_ is not None:
             X_cat_encoded = self.encoder_.transform(X_cat_filled)  # int array
-            # For each categorical column, find the index of sentinel
+            # Map sentinel to its encoded integer per categorical column
             self._missing_encoded_values_ = []
             for i, categories in enumerate(self.encoder_.categories_):
                 if sentinel in categories:
                     enc_val = np.where(categories == sentinel)[0][0]
                 else:
-                    # If sentinel not present (no missing values in that column),
-                    # choose an impossible integer to later replace with NaN
+                    # Sentinel absent -> use sentinel integer that won't collide
                     enc_val = -9999
                 self._missing_encoded_values_.append(enc_val)
 
@@ -736,14 +736,7 @@ class MixedImputer(BaseEstimator, TransformerMixin):
             result = result[input_columns_kept]
             return result
 
-        # else return ndarray in the same column order as input
-        # Note: the original X was (cat then num)? No, the input order may differ.
-        # We need to reconstruct the original column order.
-        # For simplicity, we'll just return a concatenation of cat followed by num,
-        # but that might not match input order. To preserve, we must reorder.
-        # For array input, we assume user provided categorical_features as indices,
-        # and we'll arrange output in the original order (0..n_features-1).
-        # We'll build a full array with original column positions.
+        # Reconstruct original column order for array input
         n_features = len(self._cat_idx_names) + len(self._num_idx_names)
         X_out = np.empty((X_all.shape[0], n_features))
         X_out[:, self._cat_idx_names] = X_cat_decoded
