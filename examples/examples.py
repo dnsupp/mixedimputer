@@ -43,7 +43,7 @@ print("Imputed:")
 print(imputed.to_string())
 print()
 print(f"Any remaining NaN: {imputed.isnull().any().any()}")
-print(f"Auto-detected categoricals: {imputer.categorical_features}")
+print(f"Auto-detected categoricals: {imputer.categorical_features_}")
 
 
 # =========================================================================
@@ -173,7 +173,7 @@ df_all_num = pd.DataFrame({
 imputer8 = MixedImputer(max_iter=5, random_state=42)
 imputed8 = imputer8.fit_transform(df_all_num)
 print(imputed8.to_string())
-print(f"\nCategorical features: {imputer8.categorical_features}")
+print(f"\nCategorical features: {imputer8.categorical_features_}")
 
 
 # =========================================================================
@@ -188,7 +188,7 @@ df_all_cat = pd.DataFrame({
 imputer9 = MixedImputer(max_iter=5, random_state=42)
 imputed9 = imputer9.fit_transform(df_all_cat)
 print(imputed9.to_string())
-print(f"\nCategorical features: {imputer9.categorical_features}")
+print(f"\nCategorical features: {imputer9.categorical_features_}")
 
 
 # =========================================================================

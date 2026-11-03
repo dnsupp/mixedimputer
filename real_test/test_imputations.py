@@ -2,7 +2,7 @@
 Real-world test of mixedimputer installed from PyPI.
 
 Run:
-    pip install mixedimputer
+    pip install mixed-imputer
     python real_test/test_imputations.py
 """
 
@@ -39,7 +39,7 @@ print("Imputed:")
 print(result.to_string())
 print()
 print(f"  NaNs remaining: {result.isnull().any().any()}")
-print(f"  Categoricals detected: {imputer.categorical_features}")
+print(f"  Categoricals detected: {imputer.categorical_features_}")
 assert not result.isnull().any().any(), "FAIL: NaNs remain!"
 print("  PASS")
 
@@ -103,10 +103,10 @@ imputer_num = MixedImputer(max_iter=5, random_state=42)
 result_num = imputer_num.fit_transform(num_data)
 
 print(result_num.to_string())
-print(f"  Categoricals detected: {imputer_num.categorical_features}")
+print(f"  Categoricals detected: {imputer_num.categorical_features_}")
 print(f"  NaNs remaining: {result_num.isnull().any().any()}")
 assert not result_num.isnull().any().any(), "FAIL: NaNs remain!"
-assert imputer_num.categorical_features == [], "FAIL: Numeric cols detected as categorical!"
+assert imputer_num.categorical_features_ == [], "FAIL: Numeric cols detected as categorical!"
 print("  PASS")
 
 

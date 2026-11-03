@@ -1,106 +1,142 @@
 # Benchmarks
 
+**Version:** `0.2.0`
+
+**Reproduce with:** `python benchmark/run_benchmarks.py`
+
+**Runner:** [`benchmark/run_benchmarks.py`](benchmark/run_benchmarks.py)
+**Interaction notebooks:** [`benchmark/benchmark.ipynb`](benchmark/benchmark.ipynb), [`benchmark/benchmark_timeseries.ipynb`](benchmark/benchmark_timeseries.ipynb)
+
+These are single-seed results (`random_state=42`) on small datasets. They are
+useful as regression checks and as a sanity check against naive baselines, not
+as evidence of general superiority. The sample size for every column is shown.
+Repeated-seed confidence intervals are a planned improvement.
+
 ## Datasets
 
 ### Titanic (MixedImputer)
-- **Source:** `data/titanic.csv` — public domain passenger list
-- **Size:** 891 passengers, 12 columns (7 numeric, 5 categorical/string)
-- **High-cardinality columns dropped:** `Name`, `Ticket`, `Cabin`, `PassengerId`
-- **Benchmark columns:** `Age`, `Fare` (numeric) + `Sex`, `Embarked` (categorical)
+
+- **Source:** `data/titanic.csv` — a public passenger-list dataset bundled for
+  the examples. Add the original dataset citation/provenance when redistributing.
+- **Size:** 891 passengers, 12 columns.
+- **Dropped before imputation:** `Name`, `Ticket`, `Cabin`, `PassengerId`
+  (high-cardinality / identifier columns).
+- **Benchmark columns:** `Age`, `Fare` (numeric) and `Sex`, `Embarked`
+  (categorical). The imputer is fitted on the full remaining DataFrame.
 
 ### GPU Sensor Log (TimeSeriesImputer)
-- **Source:** `data/gpu_sensor_log.txt` — real-world GPU sensor readings logged during a gaming session
-- **Size:** 356 rows (1-second intervals, ~6 minutes), 14 sensor columns
-- **Benchmark columns:** `GPU Temperature [°C]`, `Fan Speed (RPM) [RPM]`
-- **Properties:** Strong temporal autocorrelation, sudden state changes (gaming load on/off)
+
+- **Source:** `data/gpu_sensor_log.txt` — one real GPU sensor log recorded during
+  a gaming session.
+- **Size:** 356 rows at one-second intervals (~6 minutes).
+- **Benchmark columns:** `GPU Temperature [C]` and `Fan Speed (RPM) [RPM]`.
+- **Properties:** strong autocorrelation and sudden load changes.
 
 ## Methodology
 
-- **Missingness mechanism:** MCAR (Missing Completely At Random) via `pygrinder`
-- **Corruption levels:** 1%, 10%, 30% of non-missing cells per target column
-- **Evaluation:** Ground-truth comparison at corrupted positions only
-- **Metrics:**
-  - Numeric columns: RMSE (Root Mean Square Error), MAE (Mean Absolute Error)
-  - Categorical columns: Accuracy, F1-score (weighted)
-- **Random seed:** Fixed at 42 for reproducibility
+- **Missingness:** MCAR via `DataCorrupter` at 1%, 10%, and 30% of **observed**
+  cells per target column.
+- **Imputation:** `MixedImputer(max_iter=10, random_state=42)`; for time series,
+  `TimeSeriesImputer(lags=[1,2,3,5], rolling_windows=[10,30],
+  initial_strategy="forward_fill", max_iter=10, random_state=42)`.
+- **Evaluation:** ground-truth comparison only at corrupted positions.
+- **Baselines:** observed-column mean for numeric, observed-column mode for
+  categorical, and forward-fill (then backward-fill) for time series. The mean
+  baseline now uses the corrupted/observed column mean, not the full original
+  mean.
+- **Random seed:** 42 for corruption and imputation.
+- **Sample sizes:** reported per cell; interpret rows with fewer than ~30 cells
+  cautiously.
 
 ## Results: MixedImputer
 
-**Notebook:** [`benchmark/benchmark.ipynb`](benchmark/benchmark.ipynb)  
-**Baselines:** Mean imputation (numeric), Mode imputation (categorical)
+### Numeric RMSE (lower is better)
 
-### RMSE — Numeric Columns (lower is better)
+| Corruption | Age n | Age (MixedImputer) | Age (Mean) | Fare n | Fare (MixedImputer) | Fare (Mean) |
+|:-----------|------:|-------------------:|-----------:|-------:|--------------------:|------------:|
+| 1% | 7 | **11.58** | 13.10 | 9 | **21.48** | 27.01 |
+| 10% | 71 | **12.93** | 13.64 | 89 | **31.10** | 48.68 |
+| 30% | 214 | **13.22** | 14.36 | 267 | **31.63** | 38.04 |
 
-| Corruption | Age (MixedImputer) | Age (Mean baseline) | Fare (MixedImputer) | Fare (Mean baseline) |
-|:-----------|:------------------:|:-------------------:|:-------------------:|:--------------------:|
-| 1% | **4.98** | 9.50 | **10.12** | 22.56 |
-| 10% | **10.22** | 14.22 | **48.17** | 70.25 |
-| 30% | **12.89** | 14.13 | **33.51** | 49.75 |
+### Categorical accuracy (higher is better)
 
-### Accuracy — Categorical Columns (higher is better)
+| Corruption | Sex n | Sex (MixedImputer) | Sex (Mode) | Embarked n | Embarked (MixedImputer) | Embarked (Mode) |
+|:-----------|------:|-------------------:|-----------:|-----------:|------------------------:|----------------:|
+| 1% | 9 | **77.8%** | 55.6% | 9 | **100.0%** | 77.8% |
+| 10% | 89 | **82.0%** | 65.2% | 89 | **78.7%** | 69.7% |
+| 30% | 267 | **76.0%** | 63.7% | 267 | 75.7% | **79.8%** |
 
-| Corruption | Sex (MixedImputer) | Sex (Mode baseline) | Embarked (MixedImputer) | Embarked (Mode baseline) |
-|:-----------|:------------------:|:-------------------:|:----------------------:|:------------------------:|
-| 1% | **90.0%** | 70.0% | **100.0%** | 72.7% |
-| 10% | **74.7%** | 69.5% | **83.5%** | 73.2% |
-| 30% | **75.0%** | 63.6% | **75.6%** | 73.1% |
+### What these numbers mean
 
-### Key Findings
-
-- **MixedImputer consistently beats naive baselines** across all corruption levels and column types.
-- At 1% corruption, MixedImputer reduces numeric RMSE by **48–55%** compared to mean imputation.
-- Categorical imputation achieves **100% accuracy** on `Embarked` at 1% corruption and remains robust through 30%.
-- The `Fare` column shows non-monotonic RMSE (48.17 at 10% vs 33.51 at 30%) — this is a **data-distribution effect** caused by the £512.33 outlier, not an imputer artifact. The baseline follows the same pattern.
-- **Zero preprocessing required** — MixedImputer handles the full DataFrame (numeric + string columns) in a single `fit_transform` call.
+- The imputer beats the observed-mean baseline for both numeric columns at all
+  three corruption levels, but the margin is small at 1% (7–9 cells) and for Age
+  at 30% (13.22 vs 14.36).
+- Sex and Embarked improve at 10%, but Embarked is **worse than the mode
+  baseline at 30%** (75.7% vs 79.8%). There is no universal categorical win.
+- The 1% rows are dominated by sampling noise and should not be used for
+  headline claims.
 
 ## Results: TimeSeriesImputer
 
-> **Status: Experimental** — `TimeSeriesImputer` has verified functional correctness (22 unit tests pass) but has not yet been benchmarked against established time-series imputation methods (e.g., Kalman filters, `pandas.interpolate`).
+### RMSE — GPU sensor columns (lower is better)
 
-**Notebook:** [`benchmark/benchmark_timeseries.ipynb`](benchmark/benchmark_timeseries.ipynb)  
-**Baselines:** Forward-fill (time-aware), Mean imputation (naive)
+| Corruption | GPU Temp n | TS | Forward-fill | Mean | Fan n | TS | Forward-fill | Mean |
+|:-----------|-----------:|----:|-------------:|-----:|------:|----:|-------------:|-----:|
+| 1% | 4 | **0.48** | 0.50 | 3.28 | 4 | **24.32** | 31.78 | 188.21 |
+| 10% | 36 | 1.06 | **0.94** | 4.05 | 36 | **18.38** | 27.98 | 289.10 |
+| 30% | 107 | 1.13 | **1.13** | 4.59 | 107 | **21.75** | 33.76 | 284.03 |
 
-### RMSE — GPU Sensor Columns (lower is better)
+### What these numbers mean
 
-| Corruption | GPU Temperature (TS) | GPU Temperature (FF) | GPU Temperature (Mean) | Fan Speed (TS) | Fan Speed (FF) | Fan Speed (Mean) |
-|:-----------|:--------------------:|:--------------------:|:----------------------:|:--------------:|:--------------:|:----------------:|
-| 1% | **0.49** | 0.87 | 6.26 | —* | —* | —* |
-| 10% | **1.20** | 1.33 | 5.83 | 213.20 | **182.09** | 378.89 |
-| 30% | **1.21** | 1.32 | 5.42 | 118.41 | **114.85** | 324.05 |
-
-\* At 1% corruption, only 4 cells were selected — all fell in GPU Temperature by MCAR chance.
-
-### Key Findings
-
-- **TimeSeriesImputer dramatically outperforms mean imputation** — up to **12.8× lower RMSE** for GPU Temperature at 1%.
-- **Forward-fill is a strong baseline** for highly autocorrelated data (Fan Speed): it slightly edges out TimeSeriesImputer. This is expected — when a signal changes slowly, the previous value is often the best guess.
-- **TimeSeriesImputer wins on GPU Temperature**, where the signal has more complex patterns that benefit from the MICE-style iterative refinement.
-- The temporal features (lags, rolling means) allow the imputer to exploit autocorrelation, unlike the mean baseline which ignores time entirely.
+- The imputer substantially beats mean imputation for both GPU columns at
+  10%/30% (roughly 4× for temperature and 13–16× for fan speed).
+- Forward-fill is the strongest baseline for GPU Temperature; it beats the
+  imputer at 10%/30% (0.94 vs 1.06, 1.13 vs 1.13). The earlier, much larger
+  “12.8×” headline was based on four 1%-corrupted cells and is not repeated here.
+- The imputer beats forward-fill for Fan Speed at 10%/30%, where the signal has
+  more complex state changes.
+- The rolling windows used for feature engineering are shifted by one row in
+  `0.2.0`, so these numbers are **not** directly comparable to the older
+  benchmark tables. The old tables had a train/serving mismatch in the rolling
+  features.
 
 ## How to Reproduce
 
-1. Install the package in development mode with dependencies:
+```bash
+git clone https://github.com/dnsupp/mixedimputer.git
+cd mixedimputer
+pip install -e ".[dev]"
+python benchmark/run_benchmarks.py
+```
 
-   ```bash
-   git clone https://github.com/dnsupp/mixed-imputer.git
-   cd mixed-imputer
-   pip install -e ".[dev]"
-   ```
+The runner prints the tables above. It deliberately avoids Jupyter/Plotly so it
+can run in CI and on a headless machine.
 
-2. Run the benchmark notebooks:
+The notebooks are for exploration:
 
-   ```bash
-   jupyter notebook benchmark/benchmark.ipynb
-   jupyter notebook benchmark/benchmark_timeseries.ipynb
-   ```
+```bash
+jupyter notebook benchmark/benchmark.ipynb
+jupyter notebook benchmark/benchmark_timeseries.ipynb
+```
 
-   Execute all cells (Cell → Run All). Results are deterministic with the fixed random seeds.
+The notebooks are not a substitute for the runner: committed notebook outputs
+go stale, and the runner is the canonical reproducible path.
 
-## Notes
+## Limitations
 
-- **Reproducibility:** All benchmarks use fixed random seeds (`random_state=42` for corruption and imputation). Re-running the notebooks will produce identical results.
-- **MixedImputer** is benchmarked on the Titanic dataset (891 rows) — a small but well-known public dataset with mixed column types.
-- **TimeSeriesImputer** is benchmarked on a single 356-second GPU sensor log from one machine. Results may vary with different time-series characteristics (sampling rate, signal complexity, autocorrelation strength).
-- **TimeSeriesImputer is experimental** — while functional correctness is verified by 22 unit tests, the statistical accuracy has not been quantified on diverse time-series datasets. Validate results against domain knowledge before production use.
-- **MCAR only:** Both notebooks use MCAR for corruption. MAR and MNAR mechanisms are supported by `DataCorrupter` but were not benchmarked here.
-- The MixedImputer benchmark excludes high-cardinality columns (`Name`, `Ticket`, `Cabin`, `PassengerId`) which degrade iterative imputation performance.
+- **Single seed.** The tables use one corruption mask per fraction. Repeating
+  with multiple seeds and reporting mean ± 95% CI is the next step.
+- **Small samples at 1%.** Seven to nine corrupted cells per column on Titanic;
+  four per column on the GPU log. Do not read the 1% rows as precise estimates.
+- **MCAR only.** MAR and MNAR mechanisms are implemented in `DataCorrupter` but
+  are not benchmarked here.
+- **One time-series dataset.** The GPU log is 356 seconds from one machine. It
+  does not establish general time-series performance.
+- **Baselines are simple.** Mean/mode/forward-fill are useful sanity checks, not
+  state-of-the-art competitors. Kalman/state-space/interpolation baselines are
+  not included.
+- **No multiple imputation.** `sample_posterior=True` produces one stochastic
+  completed dataset; the benchmark measures single imputation.
+- **Data provenance.** The Titanic and German Credit files need their original
+  source/license/attribution documented before redistribution outside this
+  repository.
