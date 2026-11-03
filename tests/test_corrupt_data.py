@@ -258,11 +258,9 @@ class TestMAR:
             random_state=42,
         )
         corrupted, mask, original = corrupter.corrupt(simple_mixed_df)
-        # With pygrinder MAR, missingness depends on feature correlations.
-        # At 25% corruption over 2 numeric columns (20 cells), some
-        # corruption should occur.  If not, the test still verifies
-        # the function runs without error.
-        assert mask.sum().sum() >= 0, "MAR should run without error"
+        # MAR masks a scored subset of observed cells; it must always produce
+        # at least one missing value for a non-zero fraction.
+        assert mask.sum().sum() > 0, "MAR should produce missing values"
         # Original unchanged
         pd.testing.assert_frame_equal(original, simple_mixed_df)
 
@@ -275,11 +273,8 @@ class TestMAR:
             random_state=42,
         )
         corrupted, mask, _ = corrupter.corrupt(simple_mixed_df)
-        # With pygrinder's mar_logistic, missingness depends on feature
-        # correlations and may produce 0 NaN for single-column input.
-        # The test verifies the pipeline runs without error.
         assert "income" in corrupter.corrupted_columns_
-        assert mask.sum().sum() >= 0
+        assert mask.sum().sum() > 0
 
     def test_mar_nominal_target(self, simple_mixed_df):
         """MAR works when the target is a nominal (string) column."""
@@ -290,10 +285,8 @@ class TestMAR:
             random_state=42,
         )
         corrupted, mask, _ = corrupter.corrupt(simple_mixed_df)
-        # With pygrinder's mar_logistic on encoded nominal data,
-        # missingness may or may not occur depending on feature correlations.
         assert "city" in corrupter.corrupted_columns_
-        assert mask.sum().sum() >= 0
+        assert mask.sum().sum() > 0
 
 
 # =========================================================================
@@ -323,10 +316,8 @@ class TestMNAR:
             random_state=42,
         )
         corrupted, mask, _ = corrupter.corrupt(simple_mixed_df)
-        # pygrinder's mnar_nonuniform with increase_factor=0.5 and p=0.3
-        # will introduce missing values.  The extreme="low" flag flips
-        # the sign so lower values are targeted.
-        assert mask.sum().sum() >= 0
+        # MNAR scores the target's own values; low should target low values.
+        assert mask.sum().sum() > 0
 
     def test_mnar_nominal(self, simple_mixed_df):
         """MNAR works on nominal columns."""
@@ -559,7 +550,7 @@ class TestEdgeCases:
         )
         corrupted, mask, _ = corrupter.corrupt(df)
         # With 8 rows and 25% corruption, expect at least 1 cell corrupted
-        assert mask.sum().sum() >= 0
+        assert mask.sum().sum() > 0
 
     def test_all_nominal_dataframe(self):
         """Works on a DataFrame with only string columns."""
@@ -573,7 +564,7 @@ class TestEdgeCases:
         )
         corrupted, mask, _ = corrupter.corrupt(df)
         # With 8 rows and 25% corruption, expect at least 1 cell corrupted
-        assert mask.sum().sum() >= 0
+        assert mask.sum().sum() > 0
 
     def test_fraction_zero(self, simple_mixed_df):
         """fraction=0 corrupts nothing."""

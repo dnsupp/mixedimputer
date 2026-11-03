@@ -3,37 +3,29 @@ Data Corruption Module for MixedImputer
 =======================================
 
 Provides a :class:`DataCorrupter` to load datasets from various formats
-(.csv, .xlsx, .arff), select columns for corruption, and introduce
+(.csv, .xlsx, .xls, .arff), select columns for corruption, and introduce
 missing values using MCAR, MAR, or MNAR mechanisms.
 
-Uses the `pygrinder <https://github.com/WenjieDu/PyGrinder>`_ library
-for generating realistic missing-data patterns.
+The mechanisms are implemented directly with NumPy so that:
+
+- the requested fraction of **observed** cells is targeted exactly
+  (up to integer rounding),
+- already-missing cells are never overwritten,
+- the same ``random_state`` produces the same mask,
+- no global NumPy/PyTorch RNG state is modified.
 
 Column-Type Classification
---------------------------
+-------------------------
 This module aligns with :class:`MixedImputer`'s type detection:
 
-* **Numeric columns**: Columns whose pandas dtype passes
-  ``pd.api.types.is_numeric_dtype`` (int, float, etc.). These are imputed
-  via regression.
-* **Nominal (categorical) columns**: Columns with ``object``, ``string``,
-  or ``category`` dtype. These are imputed via classification.
-
-.. important::
-   **String columns** — YES, they fall under the nominal/categorical
-   category for the MixedImputer.  They are encoded with
-   ``OrdinalEncoder`` and imputed by a classifier.
-
-   **Ordinal columns** — If stored as *strings* (e.g. ``"low"``,
-   ``"medium"``, ``"high"``), they are treated as nominal (the
-   MixedImputer does **not** preserve order information — it uses
-   ``OrdinalEncoder`` internally, which assigns arbitrary integer codes).
-   If stored as *integers* (e.g. 1, 2, 3), they are treated as
-   **numeric**, so the order IS preserved via regression.
+* **Numeric columns**: dtypes that pass
+  ``pd.api.types.is_numeric_dtype`` and are not boolean.
+* **Nominal (categorical) columns**: ``object``, ``string``, ``category``,
+  or boolean dtype.
 
 Usage::
 
-    from mixedimputer.corrupt_data import DataCorrupter
+    from mixedimputer import DataCorrupter
 
     corrupter = DataCorrupter(
         mechanism="MCAR",
@@ -47,80 +39,70 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import warnings
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from pygrinder import mcar as _pygrinder_mcar
-from pygrinder import mar_logistic as _pygrinder_mar_logistic
-from pygrinder import mnar_nonuniform as _pygrinder_mnar_nonuniform
-from pygrinder import calc_missing_rate
 
 
 # ---------------------------------------------------------------------------
-# ARFF loader (via liac-arff)
+# ARFF / file loading
 # ---------------------------------------------------------------------------
 
 def _read_arff(filepath: str) -> pd.DataFrame:
-    """Load an ARFF file into a pandas DataFrame using ``liac-arff``.
-
-    Parameters
-    ----------
-    filepath : str
-        Path to the ``.arff`` file.
-
-    Returns
-    -------
-    pd.DataFrame
-    """
-    import arff
+    """Load an ARFF file into a pandas DataFrame using ``liac-arff``."""
+    try:
+        import arff
+    except ImportError as exc:
+        raise ImportError(
+            "Reading .arff files requires the optional dependency 'liac-arff'. "
+            "Install it with: pip install 'mixed-imputer[io]'"
+        ) from exc
 
     with open(filepath, "r", encoding="utf-8") as fh:
         data_dict = arff.load(fh)
 
-    # data_dict["data"] is a list of rows; data_dict["attributes"] is a
-    # list of (name, type) tuples.
     df = pd.DataFrame(
         data_dict["data"],
         columns=[attr[0] for attr in data_dict["attributes"]],
     )
 
-    # Handle column types: liac-arff returns strings for nominal values.
-    # Convert numeric columns to proper numeric types.
     for attr_name, attr_type in data_dict["attributes"]:
         if attr_name not in df.columns:
             continue
-        if isinstance(attr_type, list) or attr_type.upper() == "STRING":
-            # Nominal/string column — keep as string, replace '?' with NaN
+        if isinstance(attr_type, list) or str(attr_type).upper() == "STRING":
             df[attr_name] = df[attr_name].replace({"?": np.nan, "": np.nan})
-        elif attr_type.upper() in ("REAL", "INTEGER", "NUMERIC"):
-            try:
-                df[attr_name] = pd.to_numeric(df[attr_name], errors="coerce")
-            except (ValueError, TypeError):
-                pass
+        elif str(attr_type).upper() in ("REAL", "INTEGER", "NUMERIC"):
+            df[attr_name] = pd.to_numeric(df[attr_name], errors="coerce")
 
     return df
 
 
-# ---------------------------------------------------------------------------
-# File dispatcher
-# ---------------------------------------------------------------------------
+def _load_file(filepath: Union[str, os.PathLike], **kwargs) -> pd.DataFrame:
+    """Load a dataset from .csv, .xlsx, .xls, or .arff."""
+    path = os.fspath(filepath)
+    lower = path.lower()
 
-def _load_file(filepath: str, **kwargs) -> pd.DataFrame:
-    """Load a dataset from .csv, .xlsx, or .arff."""
-    fp = filepath.lower()
-    if fp.endswith(".csv"):
-        return pd.read_csv(filepath, **kwargs)
-    elif fp.endswith((".xls", ".xlsx")):
-        return pd.read_excel(filepath, **kwargs)
-    elif fp.endswith(".arff"):
-        return _read_arff(filepath)
-    else:
-        raise ValueError(
-            f"Unsupported file extension: {filepath}. "
-            f"Supported: .csv, .xlsx, .xls, .arff"
-        )
+    if lower.endswith(".csv"):
+        return pd.read_csv(path, **kwargs)
+    if lower.endswith((".xls", ".xlsx")):
+        try:
+            return pd.read_excel(path, **kwargs)
+        except ImportError as exc:
+            package = "openpyxl" if lower.endswith(".xlsx") else "xlrd"
+            raise ImportError(
+                f"Reading {os.path.splitext(path)[1]} files requires the "
+                f"optional dependency '{package}'. Install it with: "
+                "pip install 'mixed-imputer[io]'"
+            ) from exc
+    if lower.endswith(".arff"):
+        return _read_arff(path)
+    raise ValueError(
+        f"Unsupported file extension: {path}. "
+        "Supported: .csv, .xlsx, .xls, .arff"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -135,152 +117,163 @@ def _detect_nominal_columns(df: pd.DataFrame) -> List[str]:
             pd.api.types.is_object_dtype(dtype)
             or pd.api.types.is_string_dtype(dtype)
             or isinstance(dtype, pd.CategoricalDtype)
+            or pd.api.types.is_bool_dtype(dtype)
         ):
             cats.append(col)
     return cats
 
 
-def _detect_numeric_columns(df: pd.DataFrame, nominal_cols: List[str]) -> List[str]:
+def _detect_numeric_columns(
+    df: pd.DataFrame, nominal_cols: List[str]
+) -> List[str]:
     """Return column names that MixedImputer would treat as numeric."""
     nums = []
     for col in df.columns:
-        if col not in nominal_cols and pd.api.types.is_numeric_dtype(df[col].dtype):
+        if (
+            col not in nominal_cols
+            and pd.api.types.is_numeric_dtype(df[col].dtype)
+            and not pd.api.types.is_bool_dtype(df[col].dtype)
+        ):
             nums.append(col)
     return nums
 
 
-# ---------------------------------------------------------------------------
-# Helpers for pygrinder integration
-# ---------------------------------------------------------------------------
-
 def _encode_nominal_to_numeric(series: pd.Series) -> np.ndarray:
-    """Label-encode a nominal series to float for pygrinder consumption."""
+    """Label-encode a nominal series to float codes for scoring."""
     codes = pd.Categorical(series).codes.astype(float)
     codes[codes < 0] = np.nan
     return codes
 
 
-def _compute_mask_from_corrupted(
-    original_arr: np.ndarray,
-    corrupted_arr: np.ndarray,
-    already_missing: np.ndarray,
-) -> np.ndarray:
-    """Extract a boolean mask: True where pygrinder *introduced* NaN."""
-    new_nan = np.isnan(corrupted_arr)
-    return new_nan & ~already_missing
+def _numeric_values(series: pd.Series) -> np.ndarray:
+    """Return a numeric float array preserving NaN for missing values."""
+    return series.to_numpy(dtype=float, na_value=np.nan)
 
 
-def _build_mar_feature_matrix(
+def _make_rng(random_state):
+    """Create a local Generator without mutating global RNG state."""
+    if isinstance(random_state, np.random.Generator):
+        return random_state
+    if isinstance(random_state, np.random.RandomState):
+        # A RandomState is not a documented default_rng seed in NumPy 1.x.
+        seed = int(random_state.randint(0, 2**32 - 1))
+        return np.random.default_rng(seed)
+    return np.random.default_rng(random_state)
+
+
+# ---------------------------------------------------------------------------
+# Mechanism helpers
+# ---------------------------------------------------------------------------
+
+def _validate_fraction(fraction: float) -> float:
+    fraction = float(fraction)
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError(
+            f"corruption_fraction must be in [0, 1], got {fraction}"
+        )
+    return fraction
+
+
+def _n_to_corrupt(fraction: float, n_available: int) -> int:
+    """Number of observed cells to mask for one column."""
+    if n_available <= 0 or fraction <= 0:
+        return 0
+    k = int(round(fraction * n_available))
+    if k < 1:
+        k = 1
+    return min(k, n_available)
+
+
+def _as_label(value):
+    """Convert a NumPy scalar to the corresponding Python object."""
+    return value.item() if isinstance(value, np.generic) else value
+
+
+def _standardize(values: np.ndarray) -> np.ndarray:
+    """Mean-fill and standardize a 1-D array."""
+    values = np.asarray(values, dtype=float)
+    out = values.copy()
+    missing = np.isnan(out)
+    if missing.all():
+        return np.zeros_like(out)
+    mean = np.nanmean(out)
+    out[missing] = mean
+    std = np.nanstd(out)
+    if std == 0 or not np.isfinite(std):
+        return np.zeros_like(out)
+    return (out - mean) / std
+
+
+def _predictor_matrix(
     df: pd.DataFrame,
-    numeric_cols_all: List[str],
     target_col: str,
-    encoded_target: np.ndarray,
-) -> Tuple[np.ndarray, int]:
-    """Build a 2D numeric feature matrix for pygrinder.mar_logistic.
+    numeric_cols: List[str],
+    nominal_cols: List[str],
+) -> Optional[np.ndarray]:
+    """Build a standardized numeric matrix from all non-target columns."""
+    columns = [c for c in df.columns if c != target_col]
+    if not columns:
+        return None
 
-    Returns
-    -------
-    X : np.ndarray (n_samples, n_features)
-        Numeric feature matrix with imputed NaNs.
-    target_idx : int
-        Column index of the target in X.
-    """
-    if target_col in numeric_cols_all:
-        X = df[numeric_cols_all].to_numpy(dtype=float)
-        target_idx = numeric_cols_all.index(target_col)
-    else:
-        X_num = df[numeric_cols_all].to_numpy(dtype=float) if numeric_cols_all else np.empty((len(df), 0))
-        X = np.column_stack([X_num, encoded_target.reshape(-1, 1)])
-        target_idx = X.shape[1] - 1
+    feature_columns = []
+    for col in columns:
+        if col in numeric_cols:
+            feature_columns.append(_numeric_values(df[col]))
+        else:
+            feature_columns.append(_encode_nominal_to_numeric(df[col]))
 
-    # Impute NaN in feature matrix with column means
-    for c in range(X.shape[1]):
-        col_mask = np.isnan(X[:, c])
-        if col_mask.any():
-            X[col_mask, c] = np.nanmean(X[:, c])
-
-    return X, target_idx
+    matrix = np.column_stack(feature_columns) if feature_columns else None
+    if matrix is None or matrix.size == 0:
+        return None
+    standardized = [
+        _standardize(matrix[:, j]) for j in range(matrix.shape[1])
+    ]
+    return np.column_stack(standardized)
 
 
-# ---------------------------------------------------------------------------
-# Missing-data mechanisms (powered by pygrinder)
-# ---------------------------------------------------------------------------
-
-def _apply_mcar(
-    column_values: np.ndarray,
-    fraction: float,
-    already_missing: np.ndarray,
-) -> np.ndarray:
-    """MCAR via pygrinder.mcar: uniform random missingness."""
-    n_total = len(column_values)
-    n_available = n_total - already_missing.sum()
-    if n_available == 0:
-        return np.zeros(n_total, dtype=bool)
-
-    X = column_values.reshape(-1, 1).copy()
-    nan_mask = np.isnan(X)
-    if nan_mask.any():
-        X[nan_mask] = np.nanmean(X)
-
-    p_effective = fraction * n_available / n_total
-    if p_effective <= 0:
-        return np.zeros(n_total, dtype=bool)
-
-    corrupted = _pygrinder_mcar(X, p=p_effective)
-    return _compute_mask_from_corrupted(column_values, corrupted.ravel(), already_missing)
+def _apply_mcar(available: np.ndarray, fraction: float, rng) -> np.ndarray:
+    """MCAR: choose a uniform random subset of observed cells."""
+    k = _n_to_corrupt(fraction, len(available))
+    if k == 0:
+        return available[:0]
+    return rng.choice(available, size=k, replace=False)
 
 
 def _apply_mar(
-    column_values: np.ndarray,
-    all_features: np.ndarray,
-    target_idx: int,
+    predictors: np.ndarray,
+    available: np.ndarray,
     fraction: float,
-    already_missing: np.ndarray,
+    rng,
 ) -> np.ndarray:
-    """MAR via pygrinder.mar_logistic.
-
-    Missingness in the target column is determined by a logistic model
-    on *all* features.  Only the mask for the target column is returned.
-    """
-    n_total = len(column_values)
-    n_available = n_total - already_missing.sum()
-    if n_available == 0:
-        return np.zeros(n_total, dtype=bool)
-
-    X = all_features.copy()
-    corrupted = _pygrinder_mar_logistic(X, obs_rate=0.9, missing_rate=fraction)
-    target_corrupted = corrupted[:, target_idx]
-    return _compute_mask_from_corrupted(column_values, target_corrupted, already_missing)
+    """MAR: mask cells with high scores from a model of other columns."""
+    k = _n_to_corrupt(fraction, len(available))
+    if k == 0:
+        return available[:0]
+    n_features = predictors.shape[1]
+    coefficients = rng.normal(size=n_features)
+    scores = predictors @ coefficients
+    scores = scores + rng.normal(scale=0.5, size=len(predictors))
+    order = np.argsort(-scores[available], kind="mergesort")
+    return available[order[:k]]
 
 
 def _apply_mnar(
-    column_values: np.ndarray,
+    values: np.ndarray,
+    available: np.ndarray,
     fraction: float,
-    already_missing: np.ndarray,
-    extreme: str = "high",
+    rng,
+    extreme: str,
 ) -> np.ndarray:
-    """MNAR via pygrinder.mnar_nonuniform.
-
-    Missingness depends on the column's own values.  Higher values are
-    more likely to be missing by default.
-    """
-    n_total = len(column_values)
-    n_available = n_total - already_missing.sum()
-    if n_available == 0 or np.all(already_missing):
-        return np.zeros(n_total, dtype=bool)
-
-    vals = column_values.copy()
-    if extreme == "low":
-        vals = -vals
-
-    X = vals.reshape(-1, 1, 1).copy()
-    nan_mask_3d = np.isnan(X)
-    if nan_mask_3d.any():
-        X[nan_mask_3d] = np.nanmean(X)
-
-    corrupted, _ = _pygrinder_mnar_nonuniform(X, p=fraction, increase_factor=0.5)
-    corrupted_1d = corrupted.ravel()
-    return _compute_mask_from_corrupted(column_values, corrupted_1d, already_missing)
+    """MNAR: mask cells with high/low values of the target itself."""
+    k = _n_to_corrupt(fraction, len(available))
+    if k == 0:
+        return available[:0]
+    standardized = _standardize(values)
+    direction = 1.0 if extreme == "high" else -1.0
+    scores = direction * standardized
+    scores = scores + rng.normal(scale=0.5, size=len(values))
+    order = np.argsort(-scores[available], kind="mergesort")
+    return available[order[:k]]
 
 
 # ---------------------------------------------------------------------------
@@ -290,72 +283,46 @@ def _apply_mnar(
 class DataCorrupter:
     """Introduce missing values into a dataset with fine-grained control.
 
-    Uses the ``pygrinder`` library under the hood for generating
-    realistic MCAR, MAR, and MNAR patterns.
-
     Parameters
     ----------
     mechanism : {"MCAR", "MAR", "MNAR"}, default="MCAR"
-        The missing-data mechanism:
-
-        * ``"MCAR"`` — Missing Completely At Random.  Every cell in the
-          targeted columns has an equal chance of being set to NaN
-          (via ``pygrinder.mcar``).
-        * ``"MAR"`` — Missing At Random.  Missingness in a column depends
-          on the *observed* values of other columns through a logistic
-          model (via ``pygrinder.mar_logistic``).
-        * ``"MNAR"`` — Missing Not At Random.  Missingness in a column
-          depends on the column's *own* (soon-to-be-unobserved) values.
-          Higher values are more likely to go missing by default
-          (via ``pygrinder.mnar_nonuniform``); use
-          ``mnar_extreme="low"`` for the opposite.
+        - ``"MCAR"``: uniform random masking of observed cells.
+        - ``"MAR"``: masking probability depends on the other columns
+          through a random linear score.
+        - ``"MNAR"``: masking probability depends on the target's own
+          values; ``mnar_extreme="high"`` selects high values,
+          ``"low"`` selects low values.
 
     corruption_fraction : float or Dict[str, float], default=0.10
-        Fraction of values to corrupt (0–1).  If a single float, applied
-        uniformly to all targeted columns.  If a dictionary mapping column
-        names to fractions, each column gets its specified fraction.
+        Fraction of **observed** values to corrupt per target column.
+        Dictionary values override the fraction per column.
 
     num_numeric : int or None, default=None
-        Number of **numeric** columns to corrupt.  If ``None``, use
-        ``numeric_columns`` (see below).  Set to 0 to skip numeric columns.
-
+        Number of numeric columns to corrupt.  ``None`` means "use
+        numeric_columns".
     num_nominal : int or None, default=None
-        Number of **nominal** (string/categorical) columns to corrupt.
-        If ``None``, use ``nominal_columns`` (see below).  Set to 0 to
-        skip nominal columns.
-
-    numeric_columns : List[str] or None, default=None
-        Explicit list of numeric column names to corrupt.  Overrides
-        ``num_numeric``.
-
-    nominal_columns : List[str] or None, default=None
-        Explicit list of nominal column names to corrupt.  Overrides
-        ``num_nominal``.
-
-    num_random_columns : int or None, default=None
-        Number of **random** columns (any type) to corrupt.  Convenience
-        shortcut — internally selects that many columns at random ignoring
-        ``num_numeric`` / ``num_nominal``.
-
+        Number of nominal columns to corrupt.  ``None`` means "use
+        nominal_columns".
+    numeric_columns : List[str] or None
+        Explicit numeric target columns.
+    nominal_columns : List[str] or None
+        Explicit nominal target columns.
+    num_random_columns : int or None
+        Convenience shortcut: choose this many arbitrary columns.
     mnar_extreme : {"high", "low"}, default="high"
-        For MNAR: whether high or low values are more likely to go missing.
-
-    random_state : int or None, default=None
-        Seed for reproducibility (sets NumPy's global seed before each
-        pygrinder call).
+        Whether high or low target values are more likely to be masked.
+    random_state : int, RandomState, or None
+        Seed/state for all random choices.  No global RNG state is changed.
 
     Attributes
     ----------
     corrupted_columns_ : List[str]
-        Column names that were actually corrupted (after ``corrupt()``).
     mask_ : pd.DataFrame
-        Boolean mask of same shape as input — ``True`` where a value was
-        set to NaN.
     original_df_ : pd.DataFrame
-        The original, uncorrupted DataFrame (cached copy).
     """
 
     _VALID_MECHANISMS = {"MCAR", "MAR", "MNAR"}
+    _VALID_EXTREMES = {"high", "low"}
 
     def __init__(
         self,
@@ -367,13 +334,31 @@ class DataCorrupter:
         nominal_columns: Optional[List[str]] = None,
         num_random_columns: Optional[int] = None,
         mnar_extreme: str = "high",
-        random_state: Optional[int] = None,
+        random_state=None,
     ):
         if mechanism not in self._VALID_MECHANISMS:
             raise ValueError(
-                f"mechanism must be one of {self._VALID_MECHANISMS}, "
-                f"got '{mechanism}'"
+                f"mechanism must be one of {sorted(self._VALID_MECHANISMS)}, "
+                f"got {mechanism!r}"
             )
+        if mnar_extreme not in self._VALID_EXTREMES:
+            raise ValueError(
+                f"mnar_extreme must be one of {sorted(self._VALID_EXTREMES)}, "
+                f"got {mnar_extreme!r}"
+            )
+        for name, value in (
+            ("num_numeric", num_numeric),
+            ("num_nominal", num_nominal),
+            ("num_random_columns", num_random_columns),
+        ):
+            if value is not None and (
+                not isinstance(value, (int, np.integer)) or int(value) < 0
+            ):
+                raise ValueError(
+                    f"{name} must be a non-negative integer or None; "
+                    f"got {value!r}"
+                )
+
         self.mechanism = mechanism
         self.corruption_fraction = corruption_fraction
         self.num_numeric = num_numeric
@@ -384,7 +369,6 @@ class DataCorrupter:
         self.mnar_extreme = mnar_extreme
         self.random_state = random_state
 
-        # Set after corruption
         self.corrupted_columns_: List[str] = []
         self.mask_: Optional[pd.DataFrame] = None
         self.original_df_: Optional[pd.DataFrame] = None
@@ -392,49 +376,36 @@ class DataCorrupter:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-
     def corrupt(
         self,
-        filepath_or_df: Union[str, pd.DataFrame],
+        filepath_or_df: Union[str, os.PathLike, pd.DataFrame],
         **load_kwargs,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Load (if needed), copy, and corrupt a dataset.
 
-        Parameters
-        ----------
-        filepath_or_df : str or pd.DataFrame
-            Either a file path (``.csv``, ``.xlsx``, ``.arff``) or an
-            already-loaded DataFrame.
-        **load_kwargs
-            Extra arguments forwarded to ``pd.read_csv`` or ``pd.read_excel``
-            (ignored when a DataFrame is passed or for ``.arff`` files).
-
-        Returns
-        -------
-        corrupted : pd.DataFrame
-            The corrupted DataFrame.
-        mask : pd.DataFrame
-            Boolean mask (same shape) with ``True`` at corrupted positions.
-        original : pd.DataFrame
-            The original (uncorrupted) DataFrame.
+        ``corruption_fraction`` is applied to the observed (non-NaN) cells of
+        each target column.  Already-missing cells are never changed.
         """
-        # --- Load ---
         if isinstance(filepath_or_df, pd.DataFrame):
             df_original = filepath_or_df.copy()
         else:
             df_original = _load_file(filepath_or_df, **load_kwargs)
 
-        self.original_df_ = df_original.copy()
+        if len(df_original.columns) == 0:
+            raise ValueError("Cannot corrupt a DataFrame with no columns.")
+        if len(set(df_original.columns)) != len(df_original.columns):
+            raise ValueError("DataFrame has duplicate column names.")
 
-        # --- Determine column types ---
+        self.original_df_ = df_original.copy()
         all_nominal = _detect_nominal_columns(df_original)
         all_numeric = _detect_numeric_columns(df_original, all_nominal)
 
-        # --- Select columns to corrupt ---
+        rng = _make_rng(self.random_state)
         target_cols = self._select_target_columns(
             all_numeric=all_numeric,
             all_nominal=all_nominal,
             df=df_original,
+            rng=rng,
         )
 
         if not target_cols:
@@ -448,14 +419,8 @@ class DataCorrupter:
             self.corrupted_columns_ = []
             return df_original.copy(), mask, df_original.copy()
 
-        self.corrupted_columns_ = target_cols
-
-        # --- Resolve corruption fractions ---
+        self.corrupted_columns_ = list(target_cols)
         frac_map = self._resolve_fractions(target_cols)
-
-        # --- Set seed for pygrinder reproducibility ---
-        if self.random_state is not None:
-            np.random.seed(self.random_state)
 
         df_corrupted = df_original.copy()
         mask = pd.DataFrame(
@@ -463,38 +428,53 @@ class DataCorrupter:
         )
 
         for col in target_cols:
-            frac = frac_map.get(col, 0.10)
+            frac = frac_map[col]
             if frac <= 0:
                 continue
 
-            is_numeric = col in all_numeric
             already_missing = df_original[col].isna().to_numpy()
-
-            if is_numeric:
-                col_values = df_original[col].to_numpy(dtype=float)
-                col_values_for_grinder = col_values.copy()
-            else:
-                col_values_for_grinder = _encode_nominal_to_numeric(
-                    df_original[col]
+            available = np.flatnonzero(~already_missing)
+            if len(available) == 0:
+                warnings.warn(
+                    f"Column {col!r} has no observed values; skipping."
                 )
+                continue
+
+            is_numeric = col in all_numeric
+            if is_numeric:
+                values = _numeric_values(df_original[col])
+            else:
+                values = _encode_nominal_to_numeric(df_original[col])
 
             if self.mechanism == "MCAR":
-                col_mask = _apply_mcar(col_values_for_grinder, frac, already_missing)
+                corrupted_indices = _apply_mcar(available, frac, rng)
             elif self.mechanism == "MAR":
-                X_mar, target_idx = _build_mar_feature_matrix(
-                    df_original, all_numeric, col, col_values_for_grinder
+                predictors = _predictor_matrix(
+                    df_original, col, all_numeric, all_nominal
                 )
-                col_mask = _apply_mar(
-                    col_values_for_grinder, X_mar, target_idx, frac, already_missing
+                if predictors is None:
+                    raise ValueError(
+                        "MAR requires at least one other column to use as a "
+                        "predictor; this DataFrame has no other columns."
+                    )
+                corrupted_indices = _apply_mar(
+                    predictors, available, frac, rng
                 )
             else:  # MNAR
-                col_mask = _apply_mnar(
-                    col_values_for_grinder, frac, already_missing,
+                corrupted_indices = _apply_mnar(
+                    values,
+                    available,
+                    frac,
+                    rng,
                     extreme=self.mnar_extreme,
                 )
 
-            # Safety: never corrupt already-missing positions
-            col_mask = col_mask & ~already_missing
+            corrupted_indices = np.asarray(corrupted_indices, dtype=int)
+            if len(corrupted_indices) == 0:
+                continue
+            col_mask = np.zeros(len(df_original), dtype=bool)
+            col_mask[corrupted_indices] = True
+            col_mask &= ~already_missing
 
             df_corrupted.loc[col_mask, col] = np.nan
             mask.loc[col_mask, col] = True
@@ -505,67 +485,63 @@ class DataCorrupter:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
     def _select_target_columns(
         self,
         all_numeric: List[str],
         all_nominal: List[str],
         df: pd.DataFrame,
+        rng,
     ) -> List[str]:
-        """Determine which columns to corrupt based on the configuration."""
-        rng = np.random.default_rng(self.random_state)
-
-        # -- "num_random_columns" shortcut --
         if self.num_random_columns is not None:
-            n = min(self.num_random_columns, len(df.columns))
-            return list(rng.choice(df.columns.tolist(), size=n, replace=False))
+            n = min(int(self.num_random_columns), len(df.columns))
+            if n == 0:
+                return []
+            return [
+                _as_label(c) for c in rng.choice(
+                    df.columns.to_numpy(dtype=object), size=n, replace=False
+                )
+            ]
 
         targets: List[str] = []
 
-        # Numeric selection
         if self.numeric_columns is not None:
-            for c in self.numeric_columns:
-                if c not in all_numeric:
+            for col in self.numeric_columns:
+                if col not in all_numeric:
                     raise ValueError(
-                        f"Column '{c}' is not a numeric column. "
+                        f"Column {col!r} is not a numeric column. "
                         f"Available numeric columns: {all_numeric}"
                     )
             targets.extend(self.numeric_columns)
-        elif self.num_numeric is not None:
-            if self.num_numeric > 0:
-                if self.num_numeric > len(all_numeric):
-                    raise ValueError(
-                        f"Requested {self.num_numeric} numeric columns but "
-                        f"only {len(all_numeric)} available: {all_numeric}"
-                    )
-                chosen = rng.choice(
-                    all_numeric, size=self.num_numeric, replace=False
+        elif self.num_numeric is not None and self.num_numeric > 0:
+            if self.num_numeric > len(all_numeric):
+                raise ValueError(
+                    f"Requested {self.num_numeric} numeric columns but "
+                    f"only {len(all_numeric)} available: {all_numeric}"
                 )
-                targets.extend(chosen.tolist())
+            chosen = rng.choice(
+                all_numeric, size=int(self.num_numeric), replace=False
+            )
+            targets.extend(_as_label(c) for c in chosen)
 
-        # Nominal selection
         if self.nominal_columns is not None:
-            for c in self.nominal_columns:
-                if c not in all_nominal:
+            for col in self.nominal_columns:
+                if col not in all_nominal:
                     raise ValueError(
-                        f"Column '{c}' is not a nominal column. "
+                        f"Column {col!r} is not a nominal column. "
                         f"Available nominal columns: {all_nominal}"
                     )
             targets.extend(self.nominal_columns)
-        elif self.num_nominal is not None:
-            if self.num_nominal > 0:
-                if self.num_nominal > len(all_nominal):
-                    raise ValueError(
-                        f"Requested {self.num_nominal} nominal columns but "
-                        f"only {len(all_nominal)} available: {all_nominal}"
-                    )
-                chosen = rng.choice(
-                    all_nominal, size=self.num_nominal, replace=False
+        elif self.num_nominal is not None and self.num_nominal > 0:
+            if self.num_nominal > len(all_nominal):
+                raise ValueError(
+                    f"Requested {self.num_nominal} nominal columns but "
+                    f"only {len(all_nominal)} available: {all_nominal}"
                 )
-                targets.extend(chosen.tolist())
+            chosen = rng.choice(
+                all_nominal, size=int(self.num_nominal), replace=False
+            )
+            targets.extend(_as_label(c) for c in chosen)
 
-        # If nothing specified at all (all None), corrupt ALL columns.
-        # If any was specified (even 0), use the explicit targets list.
         if (
             self.num_random_columns is None
             and self.num_numeric is None
@@ -573,48 +549,40 @@ class DataCorrupter:
             and self.numeric_columns is None
             and self.nominal_columns is None
         ):
-            targets = df.columns.tolist()
+            targets = list(df.columns)
 
-        return targets
+        # Preserve order and remove duplicates.
+        seen = set()
+        unique_targets = []
+        for col in targets:
+            if col not in seen:
+                seen.add(col)
+                unique_targets.append(col)
+        return unique_targets
 
     def _resolve_fractions(self, target_cols: List[str]) -> Dict[str, float]:
-        """Build a per-column fraction dictionary."""
         if isinstance(self.corruption_fraction, dict):
-            for col in self.corruption_fraction:
+            fractions = {}
+            for col, value in self.corruption_fraction.items():
                 if col not in target_cols:
                     warnings.warn(
-                        f"Column '{col}' in corruption_fraction dict is not "
+                        f"Column {col!r} in corruption_fraction dict is not "
                         f"in the target columns {target_cols}. Ignoring."
                     )
+                fractions[col] = _validate_fraction(value)
             return {
-                col: self.corruption_fraction.get(col, 0.10)
-                for col in target_cols
+                col: fractions.get(col, 0.10) for col in target_cols
             }
-        else:
-            frac = float(self.corruption_fraction)
-            if not 0.0 <= frac <= 1.0:
-                raise ValueError(
-                    f"corruption_fraction must be in [0, 1], got {frac}"
-                )
-            return {col: frac for col in target_cols}
+        fraction = _validate_fraction(self.corruption_fraction)
+        return {col: fraction for col in target_cols}
 
     # ------------------------------------------------------------------
     # Introspection helpers
     # ------------------------------------------------------------------
-
-    def describe_columns(self, filepath_or_df: Union[str, pd.DataFrame]) -> Dict:
-        """Return a summary of column types in the dataset.
-
-        Useful for deciding which columns to corrupt.
-
-        Returns
-        -------
-        dict with keys:
-            ``"numeric"`` — list of numeric column names,
-            ``"nominal"`` — list of nominal column names,
-            ``"all"`` — list of all column names,
-            ``"dtypes"`` — dict of ``{column_name: dtype_string}``.
-        """
+    def describe_columns(
+        self, filepath_or_df: Union[str, os.PathLike, pd.DataFrame]
+    ) -> Dict:
+        """Return a summary of column types in the dataset."""
         if isinstance(filepath_or_df, pd.DataFrame):
             df = filepath_or_df.copy()
         else:
