@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include BENCHMARKS.md
+include CITATION.cff
+recursive-include data *
+recursive-include tests *.py
+recursive-include benchmark *.py *.ipynb
+recursive-include examples *.py
+recursive-include real_test *.py

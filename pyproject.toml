@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mixed-imputer"
-version = "0.1.4.post1"
+version = "0.2.0"
 description = "Mixed-type MICE-style iterative imputer for scikit-learn — handles both numerical and categorical (string) columns in DataFrames."
 readme = "README.md"
 license = {text = "MIT"}
@@ -13,13 +13,13 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "numpy",
-    "pandas",
-    "scipy",
-    "scikit-learn>=1.0",
+    "numpy>=1.23",
+    "pandas>=1.5",
+    "scipy>=1.8",
+    "scikit-learn>=1.6,<1.9",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -31,16 +31,30 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+io = [
+    "liac-arff",
+    "openpyxl",
+    "xlrd",
+]
 dev = [
     "pytest",
     "pytest-cov",
-    "pygrinder",
     "liac-arff",
+    "openpyxl",
+    "xlrd",
+    "build",
+    "twine",
+    "ruff",
+    "jupyter",
+    "plotly",
+    "nbclient",
+    "nbconvert",
 ]
 
 [project.urls]
 Repository = "https://github.com/dnsupp/mixedimputer"
 Issues = "https://github.com/dnsupp/mixedimputer"
+Changelog = "https://github.com/dnsupp/mixedimputer/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
