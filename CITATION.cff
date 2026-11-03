@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software in academic work, please cite it."
+title: "MixedImputer"
+version: 0.2.0
+date-released: 2026-11-03
+authors:
+  - family-names: "dnsupp"
+url: "https://github.com/dnsupp/mixedimputer"
+repository-code: "https://github.com/dnsupp/mixedimputer"
+license: MIT
+abstract: >-
+  Mixed-type MICE-style iterative imputation for scikit-learn, including
+  time-series-aware imputation and a controlled data-corruption utility for
+  benchmarking. The package accompanies the author's bachelor's thesis; add
+  the thesis title/DOI here when available.
