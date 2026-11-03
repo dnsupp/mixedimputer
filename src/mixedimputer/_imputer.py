@@ -15,13 +15,17 @@ import pandas as pd
 from scipy import stats
 
 # Unlock experimental feature (must be imported BEFORE IterativeImputer)
-from sklearn.experimental import enable_iterative_imputer  # noqa: E402
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 
 from sklearn.base import BaseEstimator, TransformerMixin, clone
 from sklearn.impute import IterativeImputer
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.utils import _safe_indexing
-from sklearn.utils.validation import check_array, check_is_fitted
+from sklearn.utils.validation import (
+    check_array,
+    check_is_fitted,
+    check_random_state,
+)
 
 
 # ----------------------------------------------------------------------
@@ -86,6 +90,7 @@ class _MixedIterativeImputer(IterativeImputer):
                 ~missing_row_mask,
                 axis=0,
             )
+            y_train = np.asarray(y_train).ravel()
             estimator.set_params(
                 target_feature_index=target_feature_index,
                 predictor_feature_indices=predictor_feature_indices,
@@ -107,28 +112,23 @@ class _MixedIterativeImputer(IterativeImputer):
         target_is_categorical = estimator.is_categorical(target_feature_index)
 
         if target_is_categorical:
-            if self.sample_posterior and hasattr(estimator.model_, "predict_proba"):
-                proba = estimator.model_.predict_proba(X_test)
+            model = estimator.model_
+            if self.sample_posterior and hasattr(model, "predict_proba"):
+                proba = np.asarray(model.predict_proba(X_test), dtype=float)
                 sampled_indices = _sample_from_probabilities(
                     proba, random_state=self.random_state_
                 )
-                # sampled_indices are column indices into predict_proba
-                # (0 .. n_classes-1).  Map them back to the actual class
-                # labels via model_.classes_ so the OrdinalEncoder can
-                # decode them correctly.
-                imputed_values = estimator.model_.classes_[sampled_indices]
+                imputed_values = np.asarray(model.classes_)[sampled_indices]
             else:
                 imputed_values = estimator.predict(X_test)
 
-            # Ensure integer output (same dtype as original)
-            non_missing_vals = X_filled[~missing_row_mask, target_feature_index]
-            target_dtype = non_missing_vals.dtype
-            imputed_values = np.round(imputed_values).astype(target_dtype)
-
+            imputed_values = np.rint(np.asarray(imputed_values).ravel()).astype(float)
         else:
             if self.sample_posterior:
                 mus, sigmas = estimator.predict(X_test, return_std=True)
-                imputed_values = np.zeros(mus.shape, dtype=X_filled.dtype)
+                mus = np.asarray(mus, dtype=float).ravel()
+                sigmas = np.asarray(sigmas, dtype=float).ravel()
+                imputed_values = np.zeros(mus.shape, dtype=float)
                 positive_sigmas = sigmas > 0
                 imputed_values[~positive_sigmas] = mus[~positive_sigmas]
                 mus_too_low = mus < self._min_value[target_feature_index]
@@ -140,12 +140,16 @@ class _MixedIterativeImputer(IterativeImputer):
                 sigmas = sigmas[inrange_mask]
                 a = (self._min_value[target_feature_index] - mus) / sigmas
                 b = (self._max_value[target_feature_index] - mus) / sigmas
-                truncated_normal = stats.truncnorm(a=a, b=b, loc=mus, scale=sigmas)
+                truncated_normal = stats.truncnorm(
+                    a=a, b=b, loc=mus, scale=sigmas
+                )
                 imputed_values[inrange_mask] = truncated_normal.rvs(
                     random_state=self.random_state_
                 )
             else:
-                imputed_values = estimator.predict(X_test)
+                imputed_values = np.asarray(
+                    estimator.predict(X_test), dtype=float
+                ).ravel()
                 imputed_values = np.clip(
                     imputed_values,
                     self._min_value[target_feature_index],
@@ -190,80 +194,59 @@ class _ColumnTypeEstimator(BaseEstimator):
         categorical_indices,
         target_feature_index=None,
         predictor_feature_indices=None,
-        **params,
     ):
         self.regressor = regressor
         self.classifier = classifier
         self.categorical_indices = categorical_indices
         self.target_feature_index = target_feature_index
         self.predictor_feature_indices = predictor_feature_indices
-        self.model_ = None
 
     def is_categorical(self, feature_index):
         """Return True if the given feature index is categorical."""
         return feature_index in self.categorical_indices
 
-    def fit(self, X, y):
-        """Fit the appropriate model (regressor or classifier) on the data.
-
-        Parameters
-        ----------
-        X : ndarray of shape (n_samples, n_features)
-            Training features.
-        y : ndarray of shape (n_samples,)
-            Target values.
-        """
+    def fit(self, X, y, **fit_params):
+        """Fit the appropriate model (regressor or classifier) on the data."""
         X = np.asarray(X)
+        y = np.asarray(y).ravel()
         if self.is_categorical(self.target_feature_index):
             self.model_ = clone(self.classifier)
         else:
             self.model_ = clone(self.regressor)
-        self.model_.fit(X, y)
+        self.model_.fit(X, y, **fit_params)
         return self
 
     def predict(self, X, **kwargs):
         """Predict using the fitted model.
 
-        Parameters
-        ----------
-        X : ndarray of shape (n_samples, n_features)
-            Features.
-        **kwargs : dict
-            Additional keyword arguments forwarded to the underlying model's
-            ``predict`` method.  ``return_std=True`` is handled specially for
-            models that do not natively support it.
-
-        Returns
-        -------
-        y_pred : ndarray of shape (n_samples,)
-            Predicted values.  If ``return_std=True``, returns a tuple
-            ``(y_pred, std)``.
+        ``return_std=True`` is handled specially for models that do not
+        natively support it: those fall back to a unit standard deviation.
         """
         check_is_fitted(self, "model_")
-        # If return_std is requested but the model doesn't support it,
-        # fall back to a plain prediction with unit standard deviation.
         return_std = kwargs.pop("return_std", False)
-        try:
-            if return_std:
+        if return_std:
+            try:
                 preds, std = self.model_.predict(X, return_std=True)
-                return preds, std
-            else:
-                return self.model_.predict(X, **kwargs)
-        except TypeError:
-            if return_std:
+            except TypeError:
+                # The model does not support return_std.  Re-run a plain
+                # prediction and fall back to unit variance.
                 preds = self.model_.predict(X, **kwargs)
-                return preds, np.ones_like(preds)
-            raise
+                return np.asarray(preds).ravel(), np.ones_like(
+                    np.asarray(preds, dtype=float).ravel()
+                )
+            return np.asarray(preds).ravel(), np.asarray(std).ravel()
+        return np.asarray(self.model_.predict(X, **kwargs)).ravel()
 
 
 def _sample_from_probabilities(proba, random_state=None):
     """Draw a class for each row from the predicted probability matrix."""
-    rng = np.random.default_rng(random_state)
+    rng = check_random_state(random_state)
+    proba = np.asarray(proba, dtype=float)
     n_samples = proba.shape[0]
     cumulative = proba.cumsum(axis=1)
-    random_values = rng.random(n_samples).reshape(-1, 1)
+    random_values = rng.random_sample(n_samples).reshape(-1, 1)
     sampled = (random_values < cumulative).argmax(axis=1)
-    return sampled
+    return sampled.astype(int)
 
 
 # ----------------------------------------------------------------------
@@ -282,13 +265,13 @@ class MixedImputer(BaseEstimator, TransformerMixin):
     ----------
     categorical_features : list of int or str, or None
         Column indices or names (if DataFrame) that are categorical. If None
-        and the input is a DataFrame, columns with object, string, or category
-        dtype are automatically treated as categorical.
+        and the input is a DataFrame, columns with object, string, category,
+        or boolean dtype are automatically treated as categorical.
 
     numeric_features : list of int or str, or None
         Numeric column indices or names.  If None, auto-detected as all
-        columns whose dtype passes ``pd.api.types.is_numeric_dtype`` and
-        are not listed in ``categorical_features``.
+        columns whose dtype passes ``pd.api.types.is_numeric_dtype``, are not
+        boolean, and are not listed in ``categorical_features``.
 
     regressor : estimator, default=HistGradientBoostingRegressor()
         Regressor used for numerical target columns.  Any sklearn regressor
@@ -316,8 +299,8 @@ class MixedImputer(BaseEstimator, TransformerMixin):
         Initial imputation strategy passed to IterativeImputer.
 
     sample_posterior : bool, default=False
-        Whether to sample from the predictive posterior for multiple imputation.
-        Categorical sampling uses predicted class probabilities.
+        Whether to sample from the predictive posterior.  This is stochastic
+        single imputation, not a full multiple-imputation procedure.
 
     random_state : int, RandomState instance or None, default=None
         Seed for reproducibility.
@@ -326,8 +309,9 @@ class MixedImputer(BaseEstimator, TransformerMixin):
         Verbosity of the underlying IterativeImputer.
 
     add_indicator : bool, default=False
-        If True, add missing indicators. (They will appear in the output
-        DataFrame as boolean columns.)
+        If True, append boolean missing-indicator columns to the output, one
+        for each feature that had missing values at fit time.  DataFrame
+        columns are named ``missingindicator_<column>``.
 
     keep_empty_features : bool, default=False
         Keep features that are all missing at fit time.
@@ -337,14 +321,23 @@ class MixedImputer(BaseEstimator, TransformerMixin):
     imputation_model_ : _MixedIterativeImputer
         The fitted internal imputer.
 
-    encoder_ : OrdinalEncoder
+    encoder_ : OrdinalEncoder or None
         Fitted encoder for categorical columns.
 
-    categorical_features_ : list of int
-        Column indices in the encoded array that are categorical.
+    categorical_features_ : list
+        Fitted categorical column labels (DataFrame) or indices (array).
 
-    output_feature_order_ : list of str
-        Final column order of the output DataFrame.
+    numeric_features_ : list
+        Fitted numeric column labels (DataFrame) or indices (array).
+
+    n_features_in_ : int
+        Number of input features.
+
+    feature_names_in_ : ndarray of str
+        Defined only when a DataFrame with all-string column names is used.
+
+    n_features_out_ : int
+        Number of output columns, including missing indicators.
     """
 
     def __init__(
@@ -375,172 +368,372 @@ class MixedImputer(BaseEstimator, TransformerMixin):
         self.add_indicator = add_indicator
         self.keep_empty_features = keep_empty_features
 
-    def _validate_input(self, X, reset=True):
-        """Validate input and store feature metadata.
+    # ------------------------------------------------------------------
+    # Feature resolution
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_feature_spec(spec, n_features, columns, kind):
+        """Normalize a feature spec to a list of labels (DataFrame) or ints."""
+        if spec is None:
+            return None
+        if isinstance(spec, (str, bytes, int, np.integer)):
+            items = [spec]
+        elif isinstance(spec, (list, tuple, np.ndarray, pd.Index, pd.Series)):
+            items = list(spec)
+        else:
+            raise TypeError(
+                f"{kind} must be a list of column names/indices or None; "
+                f"got {type(spec).__name__}."
+            )
 
-        Parameters
-        ----------
-        X : DataFrame or ndarray
-            The input data.
-        reset : bool
-            If True, recompute categorical/numeric feature lists from scratch.
-            Set to False during ``transform`` to reuse the lists from ``fit``.
+        resolved = []
+        for item in items:
+            if isinstance(item, (list, dict, set, np.ndarray)):
+                raise TypeError(
+                    f"{kind} entries must be scalar column names or indices; "
+                    f"got {type(item).__name__}."
+                )
+            if columns is not None:
+                # Prefer an exact label match; fall back to a positional
+                # index when the integer is not itself a column label.
+                try:
+                    if item in columns:
+                        resolved.append(item)
+                        continue
+                except TypeError:
+                    pass
+                if isinstance(item, (int, np.integer)):
+                    pos = int(item)
+                    if 0 <= pos < n_features:
+                        resolved.append(columns[pos])
+                        continue
+                raise ValueError(
+                    f"{kind} entry {item!r} is neither a column label nor a "
+                    f"valid positional index for {n_features} columns."
+                )
+            else:
+                if not isinstance(item, (int, np.integer)):
+                    raise TypeError(
+                        f"For array input, {kind} must contain integer indices; "
+                        f"got {type(item).__name__}."
+                    )
+                pos = int(item)
+                if not 0 <= pos < n_features:
+                    raise ValueError(
+                        f"{kind} index {pos} is out of bounds for "
+                        f"{n_features} columns."
+                    )
+                resolved.append(pos)
 
-        Returns
-        -------
-        X : DataFrame or ndarray
-            The (possibly validated) input.
-        """
+        if len(set(resolved)) != len(resolved):
+            raise ValueError(f"{kind} contains duplicate entries: {resolved!r}")
+        return resolved
+
+    def _resolve_dataframe_features(self, X):
+        columns = list(X.columns)
+        if len(set(columns)) != len(columns):
+            duplicated = [
+                c for c in columns if columns.count(c) > 1
+            ]
+            raise ValueError(
+                f"DataFrame has duplicate column names: {sorted(set(duplicated))!r}. "
+                "MixedImputer requires unique column names."
+            )
+        if len(columns) == 0:
+            raise ValueError("X must contain at least one column.")
+        if len(X) == 0:
+            raise ValueError("X must contain at least one sample.")
+
+        cat = self._normalize_feature_spec(
+            self.categorical_features, len(columns), columns, "categorical_features"
+        )
+        if cat is None:
+            cat = [
+                col
+                for col in columns
+                if (
+                    pd.api.types.is_object_dtype(X[col].dtype)
+                    or pd.api.types.is_string_dtype(X[col].dtype)
+                    or isinstance(X[col].dtype, pd.CategoricalDtype)
+                    or pd.api.types.is_bool_dtype(X[col].dtype)
+                )
+            ]
+
+        num = self._normalize_feature_spec(
+            self.numeric_features, len(columns), columns, "numeric_features"
+        )
+        if num is None:
+            num = [
+                col
+                for col in columns
+                if col not in cat
+                and pd.api.types.is_numeric_dtype(X[col].dtype)
+                and not pd.api.types.is_bool_dtype(X[col].dtype)
+            ]
+
+        overlap = set(cat).intersection(num)
+        if overlap:
+            raise ValueError(
+                f"Columns cannot be both categorical and numeric: {sorted(overlap)!r}"
+            )
+
+        # Explicit feature lists are overrides, not an exhaustive partition.
+        # Assign any remaining columns by dtype so a partial list does not
+        # make valid string/numeric columns unusable.
+        assigned = set(cat).union(num)
+        for col in columns:
+            if col in assigned:
+                continue
+            dtype = X[col].dtype
+            if (
+                pd.api.types.is_object_dtype(dtype)
+                or pd.api.types.is_string_dtype(dtype)
+                or isinstance(dtype, pd.CategoricalDtype)
+                or pd.api.types.is_bool_dtype(dtype)
+            ):
+                cat.append(col)
+            elif (
+                pd.api.types.is_numeric_dtype(dtype)
+                and not pd.api.types.is_bool_dtype(dtype)
+                and not pd.api.types.is_complex_dtype(dtype)
+            ):
+                num.append(col)
+            assigned.add(col)
+
+        for col in num:
+            if not pd.api.types.is_numeric_dtype(X[col].dtype):
+                raise ValueError(
+                    f"numeric_features column {col!r} has non-numeric dtype "
+                    f"{X[col].dtype!r}."
+                )
+            if pd.api.types.is_bool_dtype(X[col].dtype):
+                raise ValueError(
+                    f"Boolean column {col!r} must be treated as categorical. "
+                    "Remove it from numeric_features or add it to "
+                    "categorical_features."
+                )
+
+        assigned = set(cat).union(num)
+        unassigned = [col for col in columns if col not in assigned]
+        if unassigned:
+            details = ", ".join(
+                f"{col!r} ({X[col].dtype!r})" for col in unassigned
+            )
+            raise ValueError(
+                "Some columns have dtypes that MixedImputer cannot handle "
+                f"(datetime/timedelta/other): {details}. Convert them to a "
+                "numeric or string dtype, or list them explicitly in "
+                "categorical_features."
+            )
+        return cat, num
+
+    def _resolve_array_features(self, X):
+        n_features = X.shape[1]
+        cat = self._normalize_feature_spec(
+            self.categorical_features, n_features, None, "categorical_features"
+        )
+        if cat is None:
+            raise ValueError(
+                "For array input, categorical_features must be provided "
+                "as a list of column indices."
+            )
+        num = self._normalize_feature_spec(
+            self.numeric_features, n_features, None, "numeric_features"
+        )
+        if num is None:
+            num = [i for i in range(n_features) if i not in cat]
+
+        overlap = set(cat).intersection(num)
+        if overlap:
+            raise ValueError(
+                f"Columns cannot be both categorical and numeric: {sorted(overlap)!r}"
+            )
+        assigned = set(cat).union(num)
+        unassigned = [i for i in range(n_features) if i not in assigned]
+        if unassigned:
+            raise ValueError(
+                f"Some array columns are not assigned to categorical_features "
+                f"or numeric_features: {unassigned!r}"
+            )
+        return cat, num
+
+    # ------------------------------------------------------------------
+    # Encoding helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _as_series_list(X_cat):
+        n_cat = X_cat.shape[1]
+        if isinstance(X_cat, pd.DataFrame):
+            return [X_cat.iloc[:, j] for j in range(n_cat)]
+        return [pd.Series(X_cat[:, j]) for j in range(n_cat)]
+
+    def _fit_encode_categorical(self, X_cat):
+        n = len(X_cat)
+        n_cat = X_cat.shape[1]
+        series_list = self._as_series_list(X_cat)
+
+        string_values = []
+        missing_masks = []
+        existing = set()
+        for series in series_list:
+            missing = series.isna().to_numpy()
+            values = series.astype(str).to_numpy(dtype=object)
+            existing.update(pd.unique(values[~missing]))
+            string_values.append(values)
+            missing_masks.append(missing)
+
+        sentinel = "__mixedimputer_missing__"
+        while sentinel in existing:
+            sentinel += "_"
+
+        filled = np.empty((n, n_cat), dtype=object)
+        for j in range(n_cat):
+            values = string_values[j].copy()
+            values[missing_masks[j]] = sentinel
+            filled[:, j] = values
+
+        encoder = OrdinalEncoder(
+            handle_unknown="use_encoded_value",
+            unknown_value=-1,
+            dtype=np.int64,
+        )
+        encoder.fit(filled)
+        encoded = encoder.transform(filled).astype(np.float64)
+
+        sentinel_codes = []
+        for j, categories in enumerate(encoder.categories_):
+            matches = np.flatnonzero(categories == sentinel)
+            code = int(matches[0]) if len(matches) else -9999
+            sentinel_codes.append(code)
+            if code != -9999:
+                encoded[encoded[:, j] == code, j] = np.nan
+
+        return encoded, encoder, sentinel, sentinel_codes
+
+    def _transform_encode_categorical(self, X_cat):
+        n = len(X_cat)
+        n_cat = X_cat.shape[1]
+        if n_cat == 0:
+            return np.empty((n, 0), dtype=np.float64)
+        if self.encoder_ is None:
+            raise ValueError("Categorical columns were not present during fit.")
+
+        series_list = self._as_series_list(X_cat)
+        filled = np.empty((n, n_cat), dtype=object)
+        for j, series in enumerate(series_list):
+            missing = series.isna().to_numpy()
+            values = series.astype(str).to_numpy(dtype=object)
+            values[missing] = self._sentinel_
+            filled[:, j] = values
+
+        encoded = self.encoder_.transform(filled).astype(np.float64)
+        for j, code in enumerate(self._sentinel_codes_):
+            if code != -9999:
+                encoded[encoded[:, j] == code, j] = np.nan
+        # Unknown categories are encoded as -1; treat them as missing.
+        encoded[encoded == -1] = np.nan
+        return encoded
+
+    # ------------------------------------------------------------------
+    # Fit
+    # ------------------------------------------------------------------
+    def fit(self, X, y=None):
+        """Fit the encoder and the iterative imputer."""
         if isinstance(X, pd.DataFrame):
             self._input_is_df = True
-            self._input_columns = X.columns.tolist()
-            self._input_index = X.index
-            if self.categorical_features is None:
-                # auto-detect object, string, and category columns
-                cats = []
-                for col, dtype in X.dtypes.items():
-                    if (pd.api.types.is_object_dtype(dtype)
-                            or pd.api.types.is_string_dtype(dtype)
-                            or isinstance(dtype, pd.CategoricalDtype)):
-                        cats.append(col)
-                self.categorical_features = cats
-            if self.numeric_features is None:
-                # Only include columns that are actually numeric dtype
-                self.numeric_features = [
-                    col
-                    for col in X.columns
-                    if col not in self.categorical_features
-                    and pd.api.types.is_numeric_dtype(X[col].dtype)
-                ]
+            self._fit_columns_ = list(X.columns)
+            cat, num = self._resolve_dataframe_features(X)
+            self.categorical_features_ = list(cat)
+            self.numeric_features_ = list(num)
+            self.n_features_in_ = X.shape[1]
+            if all(isinstance(col, str) for col in self._fit_columns_):
+                self.feature_names_in_ = np.asarray(
+                    self._fit_columns_, dtype=object
+                )
             else:
-                # ensure numeric_features not in categorical
-                pass
-            # map names to indices for internal use
-            self._cat_idx_names = self.categorical_features
-            self._num_idx_names = self.numeric_features
+                if hasattr(self, "feature_names_in_"):
+                    del self.feature_names_in_
+            self._bool_labels_ = [
+                col
+                for col in self.categorical_features_
+                if pd.api.types.is_bool_dtype(X[col].dtype)
+            ]
+            X_cat = X[self.categorical_features_].copy()
+            X_num = X[self.numeric_features_].copy()
         else:
-            # array input
             self._input_is_df = False
             X = check_array(X, ensure_all_finite=False, dtype=None)
-            n_cols = X.shape[1]
-            if self.categorical_features is None:
-                raise ValueError(
-                    "For array input, categorical_features must be provided "
-                    "as a list of column indices."
-                )
-            self._cat_idx_names = self.categorical_features
-            if self.numeric_features is None:
-                self._num_idx_names = [
-                    i for i in range(n_cols) if i not in self._cat_idx_names
-                ]
-            else:
-                self._num_idx_names = self.numeric_features
-        return X
+            if X.ndim != 2:
+                raise ValueError("X must be a 2-dimensional array.")
+            n_features = X.shape[1]
+            cat, num = self._resolve_array_features(X)
+            self.categorical_features_ = list(cat)
+            self.numeric_features_ = list(num)
+            self.n_features_in_ = n_features
+            if hasattr(self, "feature_names_in_"):
+                del self.feature_names_in_
+            self._fit_columns_ = list(range(n_features))
+            self._bool_labels_ = []
+            X_cat = X[:, self.categorical_features_]
+            X_num = X[:, self.numeric_features_]
 
-    def fit(self, X, y=None):
-        """Fit the encoder and the iterative imputer.
+        self._cat_labels_ = list(self.categorical_features_)
+        self._num_labels_ = list(self.numeric_features_)
+        self._internal_labels_ = self._cat_labels_ + self._num_labels_
+        n_samples = X.shape[0]
 
-        Parameters
-        ----------
-        X : DataFrame or ndarray of shape (n_samples, n_features)
-            Input data with missing values.
-        y : Ignored
-            Not used, present for API consistency.
-
-        Returns
-        -------
-        self : MixedImputer
-            The fitted instance.
-        """
-        X = self._validate_input(X, reset=True)
-
-        # Separate numeric and categorical parts
-        if self._input_is_df:
-            X_cat = X[self._cat_idx_names].copy()
-            X_num = X[self._num_idx_names].copy()
+        if len(self._cat_labels_) > 0:
+            (
+                X_cat_processed,
+                self.encoder_,
+                self._sentinel_,
+                self._sentinel_codes_,
+            ) = self._fit_encode_categorical(X_cat)
         else:
-            X_cat = X[:, self._cat_idx_names]
-            X_num = X[:, self._num_idx_names]
-
-        # Replace categorical NaNs with a sentinel string so OrdinalEncoder works.
-        # Convert all categorical columns to string and replace NaN with sentinel.
-        sentinel = "__MISSING__"
-        if hasattr(X_cat, "fillna"):
-            # DataFrame path: convert each column to string, replacing NaN with sentinel
-            X_cat_filled = X_cat.copy()
-            for col in (X_cat_filled.columns if hasattr(X_cat_filled, "columns") else range(X_cat_filled.shape[1])):
-                if hasattr(X_cat_filled, "iloc"):
-                    na_mask = X_cat_filled[col].isna()
-                    as_str = X_cat_filled[col].astype(str)
-                    X_cat_filled[col] = as_str.where(~na_mask, other=sentinel)
-                else:
-                    # NumPy column access
-                    col_data = X_cat_filled[:, col]
-                    na_mask = pd.isnull(col_data)
-                    X_cat_filled[:, col] = np.where(na_mask, sentinel, col_data.astype(str))
-        else:
-            # NumPy array path
-            na_mask = pd.isnull(X_cat)
-            X_cat_filled = X_cat.astype(str)
-            X_cat_filled[na_mask] = sentinel
-
-        # Fit OrdinalEncoder on the filled categorical part (skip if no cat cols)
-        if X_cat_filled.shape[1] > 0:
-            self.encoder_ = OrdinalEncoder(
-                handle_unknown="use_encoded_value",
-                unknown_value=-1,
-                dtype=np.int64,
-            )
-            self.encoder_.fit(X_cat_filled)
-        else:
+            X_cat_processed = np.empty((n_samples, 0), dtype=float)
             self.encoder_ = None
+            self._sentinel_ = "__mixedimputer_missing__"
+            self._sentinel_codes_ = []
 
-        # Transform to integers and find the encoded value for sentinel
-        if self.encoder_ is not None:
-            X_cat_encoded = self.encoder_.transform(X_cat_filled)  # int array
-            # Map sentinel to its encoded integer per categorical column
-            self._missing_encoded_values_ = []
-            for i, categories in enumerate(self.encoder_.categories_):
-                if sentinel in categories:
-                    enc_val = np.where(categories == sentinel)[0][0]
-                else:
-                    # Sentinel absent -> use sentinel integer that won't collide
-                    enc_val = -9999
-                self._missing_encoded_values_.append(enc_val)
-
-            # Replace the encoded sentinel value with np.nan so the imputer sees it as missing
-            X_cat_processed = X_cat_encoded.astype(np.float64)
-            for col_idx, miss_val in enumerate(self._missing_encoded_values_):
-                mask = X_cat_processed[:, col_idx] == miss_val
-                X_cat_processed[mask, col_idx] = np.nan
+        if len(self._num_labels_) > 0:
+            if isinstance(X_num, pd.DataFrame):
+                X_num_processed = X_num.to_numpy(
+                    dtype=np.float64, na_value=np.nan
+                )
+            else:
+                try:
+                    X_num_processed = np.asarray(X_num, dtype=np.float64)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "Numeric columns must be convertible to float64."
+                    ) from exc
         else:
-            X_cat_processed = np.empty((X.shape[0], 0), dtype=np.float64)
+            X_num_processed = np.empty((n_samples, 0), dtype=float)
 
-        # Numeric part: ensure float and keep NaN
-        if isinstance(X_num, pd.DataFrame) and X_num.shape[1] > 0:
-            X_num_processed = X_num.to_numpy(dtype=np.float64, na_value=np.nan)
-        elif isinstance(X_num, pd.DataFrame):
-            X_num_processed = np.empty((X_num.shape[0], 0), dtype=np.float64)
-        elif isinstance(X_num, np.ndarray) and X_num.shape[1] > 0:
-            X_num_processed = X_num.astype(np.float64)
-        else:
-            X_num_processed = np.empty((X_num.shape[0], 0), dtype=np.float64)
+        if np.isinf(X_num_processed).any():
+            raise ValueError("Numeric columns contain infinite values.")
 
-        # Concatenate: first categorical encoded columns, then numeric
         X_all = np.hstack([X_cat_processed, X_num_processed])
+        self._n_cat_ = len(self._cat_labels_)
+        self._n_features_full_ = X_all.shape[1]
 
-        # Categorical indices in the concatenated array are 0..n_cat-1
-        n_cat = X_cat_processed.shape[1]
-        self.categorical_features_ = list(range(n_cat))
+        if self._n_features_full_ == 0:
+            raise ValueError("X must contain at least one usable feature.")
+        if not self.keep_empty_features and np.all(np.isnan(X_all)):
+            raise ValueError(
+                "All features are entirely missing; nothing can be imputed. "
+                "Remove empty columns or set keep_empty_features=True."
+            )
 
-        # Build the internal imputer
         if self.regressor is None:
             from sklearn.ensemble import HistGradientBoostingRegressor
+
             reg = HistGradientBoostingRegressor(random_state=self.random_state)
         else:
             reg = self.regressor
         if self.classifier is None:
             from sklearn.ensemble import HistGradientBoostingClassifier
+
             clf = HistGradientBoostingClassifier(random_state=self.random_state)
         else:
             clf = self.classifier
@@ -549,7 +742,7 @@ class MixedImputer(BaseEstimator, TransformerMixin):
             estimator=_ColumnTypeEstimator(
                 regressor=reg,
                 classifier=clf,
-                categorical_indices=self.categorical_features_,
+                categorical_indices=list(range(self._n_cat_)),
             ),
             max_iter=self.max_iter,
             tol=self.tol,
@@ -562,183 +755,339 @@ class MixedImputer(BaseEstimator, TransformerMixin):
         )
         self.imputation_model_.fit(X_all)
 
-        # Track which features were dropped by the internal imputer
-        # (relevant when keep_empty_features=False and columns are all-NaN).
-        if (not self.keep_empty_features
-                and hasattr(self.imputation_model_, "_is_empty_feature")):
-            empty_mask = self.imputation_model_._is_empty_feature
+        if not self.keep_empty_features and hasattr(
+            self.imputation_model_, "_is_empty_feature"
+        ):
+            empty_mask = np.asarray(
+                self.imputation_model_._is_empty_feature, dtype=bool
+            )
             self._all_empty_features_ = list(np.flatnonzero(empty_mask))
-            self._all_valid_features_ = list(np.flatnonzero(~empty_mask))
+            self._all_valid_features_ = list(
+                np.flatnonzero(~empty_mask)
+            )
         else:
             self._all_empty_features_ = []
-            self._all_valid_features_ = list(range(X_all.shape[1]))
+            self._all_valid_features_ = list(range(self._n_features_full_))
+
+        if len(self._all_valid_features_) == 0:
+            raise ValueError(
+                "All features are entirely missing; nothing can be imputed. "
+                "Remove empty columns or set keep_empty_features=True."
+            )
+
+        # Missing indicators are appended after the imputed base features.
+        indicator = getattr(self.imputation_model_, "indicator_", None)
+        if self.add_indicator and indicator is not None and hasattr(
+            indicator, "features_"
+        ):
+            all_indicator_features = [int(i) for i in indicator.features_]
+        else:
+            all_indicator_features = []
+        self._indicator_features_all_ = all_indicator_features
+        self._indicator_features_ = [
+            i for i in all_indicator_features if i in self._all_valid_features_
+        ]
+        self._indicator_positions_ = [
+            pos
+            for pos, i in enumerate(all_indicator_features)
+            if i in self._all_valid_features_
+        ]
+        # Keep indicators in the same order as the fitted columns.
+        fit_order = {
+            label: pos for pos, label in enumerate(self._fit_columns_)
+        }
+        indicator_pairs = list(
+            zip(self._indicator_features_, self._indicator_positions_)
+        )
+        indicator_pairs.sort(
+            key=lambda pair: fit_order[self._internal_labels_[pair[0]]]
+        )
+        self._indicator_features_ = [pair[0] for pair in indicator_pairs]
+        self._indicator_positions_ = [pair[1] for pair in indicator_pairs]
+
+        valid_set = set(self._all_valid_features_)
+        internal_index = {
+            label: i for i, label in enumerate(self._internal_labels_)
+        }
+        self._kept_columns_ = [
+            label
+            for label in self._fit_columns_
+            if internal_index[label] in valid_set
+        ]
+        self._output_columns_ = list(self._kept_columns_)
+        self._output_feature_names_ = [
+            str(label) for label in self._kept_columns_
+        ]
+        for i in self._indicator_features_:
+            indicator_name = (
+                f"missingindicator_{self._internal_labels_[i]}"
+            )
+            self._output_columns_.append(indicator_name)
+            self._output_feature_names_.append(indicator_name)
+        self.n_features_out_ = len(self._output_columns_)
 
         return self
 
-    def transform(self, X):
-        """Impute missing values and return a DataFrame like the input.
+    # ------------------------------------------------------------------
+    # Decode helpers
+    # ------------------------------------------------------------------
+    def _decode_categorical(self, cat_codes):
+        n = cat_codes.shape[0]
+        n_cat = cat_codes.shape[1]
+        decoded = np.empty((n, n_cat), dtype=object)
+        decoded[:] = np.nan
+        if n_cat == 0:
+            return decoded
 
-        Parameters
-        ----------
-        X : DataFrame or ndarray of shape (n_samples, n_features)
+        for j, categories in enumerate(self.encoder_.categories_):
+            codes = cat_codes[:, j]
+            valid = ~np.isnan(codes)
+            if not valid.any():
+                continue
+            integer_codes = np.zeros(n, dtype=int)
+            integer_codes[valid] = np.rint(codes[valid]).astype(int)
+            valid &= (integer_codes >= 0) & (integer_codes < len(categories))
+            values = np.empty(n, dtype=object)
+            values[:] = np.nan
+            if valid.any():
+                values[valid] = categories[integer_codes[valid]]
+            values[values == self._sentinel_] = np.nan
+            decoded[:, j] = values
+        return decoded
 
-        Returns
-        -------
-        X_imputed : DataFrame or ndarray
-        """
-        check_is_fitted(self, "imputation_model_")
-        X = self._validate_input(X, reset=False)
-
-        # Split and encode just like in fit
-        if self._input_is_df:
-            X_cat = X[self._cat_idx_names].copy()
-            X_num = X[self._num_idx_names].copy()
-        else:
-            X_cat = X[:, self._cat_idx_names]
-            X_num = X[:, self._num_idx_names]
-
-        sentinel = "__MISSING__"
-        if hasattr(X_cat, "fillna"):
-            # DataFrame path: convert each column to string, replacing NaN with sentinel
-            X_cat_filled = X_cat.copy()
-            for col in (X_cat_filled.columns if hasattr(X_cat_filled, "columns") else range(X_cat_filled.shape[1])):
-                if hasattr(X_cat_filled, "iloc"):
-                    na_mask = X_cat_filled[col].isna()
-                    as_str = X_cat_filled[col].astype(str)
-                    X_cat_filled[col] = as_str.where(~na_mask, other=sentinel)
-                else:
-                    col_data = X_cat_filled[:, col]
-                    na_mask = pd.isnull(col_data)
-                    X_cat_filled[:, col] = np.where(na_mask, sentinel, col_data.astype(str))
-        else:
-            # NumPy array path
-            na_mask = pd.isnull(X_cat)
-            X_cat_filled = X_cat.astype(str)
-            X_cat_filled[na_mask] = sentinel
-
-        if self.encoder_ is not None:
-            X_cat_encoded = self.encoder_.transform(X_cat_filled)
-            X_cat_processed = X_cat_encoded.astype(np.float64)
-            for col_idx, miss_val in enumerate(self._missing_encoded_values_):
-                mask = X_cat_processed[:, col_idx] == miss_val
-                X_cat_processed[mask, col_idx] = np.nan
-        else:
-            X_cat_processed = np.empty((X.shape[0], 0), dtype=np.float64)
-
-        if isinstance(X_num, pd.DataFrame) and X_num.shape[1] > 0:
-            X_num_processed = X_num.to_numpy(dtype=np.float64, na_value=np.nan)
-        elif isinstance(X_num, pd.DataFrame):
-            X_num_processed = np.empty((X_num.shape[0], 0), dtype=np.float64)
-        elif isinstance(X_num, np.ndarray) and X_num.shape[1] > 0:
-            X_num_processed = X_num.astype(np.float64)
-        else:
-            X_num_processed = np.empty((X_num.shape[0], 0), dtype=np.float64)
-        X_all = np.hstack([X_cat_processed, X_num_processed])
-
-        # Impute
-        X_imputed_all_reduced = self.imputation_model_.transform(X_all)
-
-        # When keep_empty_features=False, the internal imputer drops all-NaN
-        # columns.  We need to map the reduced output back to original columns.
-        n_features_full = X_all.shape[1]
-        if len(self._all_empty_features_) > 0:
-            # Build a map from output column index → original (full) column index
-            full_idx_from_reduced = {
-                out_idx: full_idx
-                for out_idx, full_idx in enumerate(self._all_valid_features_)
-            }
-            # Re-expand to full size with NaN in dropped positions
-            X_imputed_all = np.full(
-                (X_imputed_all_reduced.shape[0], n_features_full), np.nan
-            )
-            for out_idx, full_idx in full_idx_from_reduced.items():
-                X_imputed_all[:, full_idx] = X_imputed_all_reduced[:, out_idx]
-
-            # Drop dropped columns from the column name lists for reconstruction
-            empty_set = set(self._all_empty_features_)
-            n_cat = X_cat_processed.shape[1]
-            # Categorical columns occupy indices 0..n_cat-1
-            cat_idx_names_kept = [
-                name for i, name in enumerate(self._cat_idx_names)
-                if i not in empty_set
-            ]
-            # Numeric columns occupy indices n_cat..n_features_full-1
-            num_idx_names_kept = [
-                name for i, name in enumerate(self._num_idx_names)
-                if (n_cat + i) not in empty_set
-            ]
-            # Also update input_columns for the final reorder (DataFrame only)
-            if self._input_is_df:
-                dropped_col_names = set(
-                    list(self._cat_idx_names) + list(self._num_idx_names)
-                ) - set(cat_idx_names_kept + num_idx_names_kept)
-                input_columns_kept = [
-                    c for c in self._input_columns if c not in dropped_col_names
-                ]
+    @staticmethod
+    def _decode_boolean(values):
+        """Convert decoded string values into a pandas boolean array."""
+        mask = pd.isna(values)
+        result = np.empty(len(values), dtype=object)
+        for i, value in enumerate(values):
+            if mask[i]:
+                result[i] = pd.NA
             else:
-                input_columns_kept = None
+                result[i] = str(value).strip().lower() in (
+                    "true",
+                    "1",
+                    "1.0",
+                )
+        array = pd.array(result, dtype="boolean")
+        if not array.isna().any():
+            return array.astype(bool)
+        return array
+
+    # ------------------------------------------------------------------
+    # Transform
+    # ------------------------------------------------------------------
+    def transform(self, X):
+        """Impute missing values and return a DataFrame/array like the input."""
+        check_is_fitted(self, "imputation_model_")
+
+        if isinstance(X, pd.DataFrame):
+            if not self._input_is_df:
+                raise ValueError(
+                    "This MixedImputer was fitted on an array; transform() "
+                    "must receive an array."
+                )
+            columns = list(X.columns)
+            if len(set(columns)) != len(columns):
+                raise ValueError("X has duplicate column names.")
+            missing_columns = [
+                col for col in self._fit_columns_ if col not in columns
+            ]
+            extra_columns = [
+                col for col in columns if col not in self._fit_columns_
+            ]
+            if missing_columns or extra_columns:
+                raise ValueError(
+                    "X columns do not match the fitted schema. "
+                    f"Missing: {missing_columns!r}; extra: {extra_columns!r}."
+                )
+            # Always use the fitted column order, even if X is reordered.
+            X = X.loc[:, self._fit_columns_].copy()
+            index = X.index
+            X_cat = X[self._cat_labels_].copy()
+            X_num = X[self._num_labels_].copy()
+            n_samples = len(X)
         else:
-            X_imputed_all = X_imputed_all_reduced
-            cat_idx_names_kept = list(self._cat_idx_names)
-            num_idx_names_kept = list(self._num_idx_names)
-            input_columns_kept = (
-                list(self._input_columns) if self._input_is_df else None
+            if self._input_is_df:
+                raise ValueError(
+                    "This MixedImputer was fitted on a DataFrame; transform() "
+                    "must receive a DataFrame."
+                )
+            X = check_array(X, ensure_all_finite=False, dtype=None)
+            if X.shape[1] != self.n_features_in_:
+                raise ValueError(
+                    f"X has {X.shape[1]} features, but MixedImputer was fitted "
+                    f"with {self.n_features_in_} features."
+                )
+            index = None
+            X_cat = X[:, self._cat_labels_]
+            X_num = X[:, self._num_labels_]
+            n_samples = X.shape[0]
+
+        if self._n_cat_ > 0:
+            X_cat_processed = self._transform_encode_categorical(X_cat)
+        else:
+            X_cat_processed = np.empty((n_samples, 0), dtype=float)
+
+        if len(self._num_labels_) > 0:
+            if isinstance(X_num, pd.DataFrame):
+                try:
+                    X_num_processed = X_num.to_numpy(
+                        dtype=np.float64, na_value=np.nan
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "Numeric columns at transform time are not convertible "
+                        "to float64."
+                    ) from exc
+            else:
+                try:
+                    X_num_processed = np.asarray(X_num, dtype=np.float64)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "Numeric columns at transform time are not convertible "
+                        "to float64."
+                    ) from exc
+        else:
+            X_num_processed = np.empty((n_samples, 0), dtype=float)
+
+        if np.isinf(X_num_processed).any():
+            raise ValueError("Numeric columns contain infinite values.")
+
+        X_all = np.hstack([X_cat_processed, X_num_processed])
+        X_imputed_reduced = self.imputation_model_.transform(X_all)
+
+        n_indicators = len(self._indicator_features_all_)
+        base_width = X_imputed_reduced.shape[1] - n_indicators
+        if self.keep_empty_features:
+            expected_base_width = self._n_features_full_
+        else:
+            expected_base_width = len(self._all_valid_features_)
+        if base_width != expected_base_width:
+            raise RuntimeError(
+                "Unexpected internal imputer output width: "
+                f"got {base_width}, expected {expected_base_width}."
             )
 
-        # Separate imputed parts
-        n_cat = X_cat_processed.shape[1]
-        X_cat_imputed = X_imputed_all[:, :n_cat]
-        X_num_imputed = X_imputed_all[:, n_cat:]
-
-        # If features were dropped, keep only the surviving ones
-        if len(self._all_empty_features_) > 0:
-            empty_set = set(self._all_empty_features_)
-            cat_kept_indices = [
-                i for i in range(n_cat) if i not in empty_set
-            ]
-            num_kept_indices = [
-                i for i in range(X_num_imputed.shape[1])
-                if (n_cat + i) not in empty_set
-            ]
-            X_cat_imputed = X_cat_imputed[:, cat_kept_indices]
-            X_num_imputed = X_num_imputed[:, num_kept_indices]
-
-        # Decode categorical part if any categorical columns exist
-        if n_cat > 0:
-            # Round categorical imputations to integers (the classifier outputs discrete values)
-            X_cat_imputed = np.round(X_cat_imputed).astype(int)
-
-            # Replace any value that equals the missing-encoded integer with that integer
-            # (they shouldn't persist, but just in case)
-            # Then decode using inverse transform
-            X_cat_decoded = self.encoder_.inverse_transform(X_cat_imputed)
-
-            # If any decoded value is sentinel, replace with np.nan (shouldn't happen after imputation)
-            if hasattr(X_cat_decoded, "astype"):
-                X_cat_decoded = X_cat_decoded.astype(object)
-            mask_missing = X_cat_decoded == sentinel
-            if np.any(mask_missing):
-                X_cat_decoded[mask_missing] = np.nan
+        X_base = X_imputed_reduced[:, :base_width]
+        if self.keep_empty_features:
+            X_base_full = X_base
         else:
-            # No categorical columns: create empty object array
-            X_cat_decoded = np.empty((X_all.shape[0], 0), dtype=object)
+            X_base_full = np.full(
+                (n_samples, self._n_features_full_), np.nan, dtype=float
+            )
+            if self._all_empty_features_:
+                # Warn if a column that was entirely missing during fit now
+                # contains values; it will still be dropped because the fitted
+                # internal imputer has no model for it.
+                empty_values = X_all[:, self._all_empty_features_]
+                if not np.all(np.isnan(empty_values)):
+                    warnings.warn(
+                        "A feature that was entirely missing during fit now "
+                        "contains values; it is still dropped from the output.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+            X_base_full[:, self._all_valid_features_] = X_base
 
-        # Rebuild DataFrame if input was DataFrame
+        cat_codes = X_base_full[:, : self._n_cat_]
+        num_values = X_base_full[:, self._n_cat_ :]
+        decoded_cat = self._decode_categorical(cat_codes)
+
+        # Restore boolean columns that were encoded as categorical strings.
+        cat_index_by_label = {
+            label: j for j, label in enumerate(self._cat_labels_)
+        }
+        bool_data = {}
+        for label in self._bool_labels_:
+            j = cat_index_by_label[label]
+            bool_data[label] = self._decode_boolean(decoded_cat[:, j])
+            decoded_cat[:, j] = np.asarray(bool_data[label], dtype=object)
+
+        indicators = X_imputed_reduced[:, base_width:]
+        indicator_data = [
+            np.asarray(indicators[:, pos]).astype(bool)
+            for pos in self._indicator_positions_
+        ]
+
         if self._input_is_df:
-            # Build a DataFrame with correct column order
-            result = pd.DataFrame(index=self._input_index)
-            # categorical columns first (original order)
-            for i, col_name in enumerate(cat_idx_names_kept):
-                result[col_name] = X_cat_decoded[:, i]
-            for i, col_name in enumerate(num_idx_names_kept):
-                result[col_name] = X_num_imputed[:, i]
-            # Ensure original column order (minus dropped columns)
-            result = result[input_columns_kept]
+            result = pd.DataFrame(index=index)
+            num_index_by_label = {
+                label: j for j, label in enumerate(self._num_labels_)
+            }
+            valid_set = set(self._all_valid_features_)
+            internal_index = {
+                label: i for i, label in enumerate(self._internal_labels_)
+            }
+            for label in self._fit_columns_:
+                i = internal_index[label]
+                if i not in valid_set:
+                    continue
+                if label in bool_data:
+                    result[label] = bool_data[label]
+                elif label in cat_index_by_label:
+                    result[label] = decoded_cat[
+                        :, cat_index_by_label[label]
+                    ]
+                else:
+                    result[label] = num_values[
+                        :, num_index_by_label[label]
+                    ]
+            for i, data in zip(self._indicator_features_, indicator_data):
+                result[f"missingindicator_{self._internal_labels_[i]}"] = data
+            result = result.loc[:, self._output_columns_]
             return result
 
-        # Reconstruct original column order for array input
-        n_features = len(self._cat_idx_names) + len(self._num_idx_names)
-        X_out = np.empty((X_all.shape[0], n_features))
-        X_out[:, self._cat_idx_names] = X_cat_decoded
-        X_out[:, self._num_idx_names] = X_num_imputed
-        return X_out
+        # Array output: preserve the original column order and fill dropped
+        # features with NaN, never broadcast.
+        out_columns = []
+        internal_index = {
+            label: i for i, label in enumerate(self._internal_labels_)
+        }
+        valid_set = set(self._all_valid_features_)
+        cat_index_by_label = {
+            label: j for j, label in enumerate(self._cat_labels_)
+        }
+        num_index_by_label = {
+            label: j for j, label in enumerate(self._num_labels_)
+        }
+        for label in self._fit_columns_:
+            i = internal_index[label]
+            if i not in valid_set:
+                out_columns.append(np.full(n_samples, np.nan))
+            elif label in cat_index_by_label:
+                out_columns.append(
+                    decoded_cat[:, cat_index_by_label[label]]
+                )
+            else:
+                out_columns.append(num_values[:, num_index_by_label[label]])
+        for data in indicator_data:
+            out_columns.append(data)
+
+        out = np.empty((n_samples, len(out_columns)), dtype=object)
+        for j, values in enumerate(out_columns):
+            out[:, j] = values
+        try:
+            return out.astype(np.float64)
+        except (TypeError, ValueError):
+            return out
+
+    # ------------------------------------------------------------------
+    # Feature names
+    # ------------------------------------------------------------------
+    def get_feature_names_out(self, input_features=None):
+        """Get output feature names, including missing-indicator columns."""
+        check_is_fitted(self, "imputation_model_")
+        if input_features is not None:
+            provided = list(input_features)
+            if len(provided) != len(self._fit_columns_):
+                raise ValueError(
+                    f"input_features has {len(provided)} entries, expected "
+                    f"{len(self._fit_columns_)}."
+                )
+            if self._input_is_df and provided != list(self._fit_columns_):
+                raise ValueError(
+                    "input_features must match the DataFrame columns used "
+                    "during fit."
+                )
+        return np.asarray(self._output_feature_names_, dtype=object)

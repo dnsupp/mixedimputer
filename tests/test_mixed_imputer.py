@@ -222,21 +222,21 @@ class TestAutoDetection:
         """Object dtype columns auto-detected as categorical."""
         imputer = MixedImputer(random_state=42)
         imputer.fit(simple_df)
-        assert "city" in imputer.categorical_features
-        assert "gender" in imputer.categorical_features
+        assert "city" in imputer.categorical_features_
+        assert "gender" in imputer.categorical_features_
 
     def test_auto_detect_category_dtype(self, int_cat_df):
         """Category dtype columns auto-detected."""
         imputer = MixedImputer(random_state=42)
         imputer.fit(int_cat_df)
-        assert "cat" in imputer.categorical_features
+        assert "cat" in imputer.categorical_features_
 
     def test_numeric_not_auto_detected(self, simple_df):
         """Numeric columns not auto-detected as categorical."""
         imputer = MixedImputer(random_state=42)
         imputer.fit(simple_df)
-        assert "age" not in imputer.categorical_features
-        assert "income" not in imputer.categorical_features
+        assert "age" not in imputer.categorical_features_
+        assert "income" not in imputer.categorical_features_
 
     def test_explicit_categorical_features_overrides(self):
         """Explicit categorical_features overrides auto-detection."""
@@ -247,7 +247,7 @@ class TestAutoDetection:
         imputer = MixedImputer(categorical_features=["a"], random_state=42)
         imputer.fit(df)
         # "a" should be treated as categorical even though it's numeric
-        assert "a" in imputer.categorical_features
+        assert "a" in imputer.categorical_features_
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ class TestVersion:
         """__version__ is a string."""
         from mixedimputer import __version__
         assert isinstance(__version__, str)
-        assert __version__ == "0.1.4.post1"
+        assert __version__ == "0.2.0"
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -630,6 +630,10 @@ class TestUnknownCategories:
         imputer.fit(df_fit)
         result = imputer.transform(df_transform)
         assert result.shape == df_transform.shape
+        # The unseen category is treated as missing and imputed to a known
+        # category; it must not remain NaN.
+        assert not result["cat"].isna().any()
+        assert set(result["cat"]).issubset({"a", "b"})
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -641,10 +645,13 @@ class TestAddIndicatorOutput:
         """add_indicator=True adds missing indicator columns."""
         imputer = MixedImputer(add_indicator=True, random_state=42)
         result = imputer.fit_transform(simple_df)
-        # When add_indicator=True, IterativeImputer appends indicator columns
-        # However, MixedImputer rebuilds the DataFrame from original columns,
-        # so indicators may not be forwarded.  At minimum, shape[0] must match.
+        expected = {
+            f"missingindicator_{column}" for column in simple_df.columns
+        }
+        assert expected.issubset(result.columns)
         assert result.shape[0] == simple_df.shape[0]
+        assert result.shape[1] == simple_df.shape[1] + len(expected)
+        assert all(result[col].dtype == bool for col in expected)
         assert not result.isnull().any().any()
 
 
