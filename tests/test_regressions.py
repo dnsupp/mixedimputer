@@ -1,4 +1,4 @@
-"""Regression tests for the release-blocking fixes in REVIEW.md."""
+"""Regression tests for the release-blocking fixes."""
 
 from __future__ import annotations
 

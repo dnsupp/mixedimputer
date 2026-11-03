@@ -9,8 +9,8 @@
 ## Highlights
 
 `0.2.0` is a correctness and release-readiness release. It resolves the
-release-blocking findings from `REVIEW.md` and makes the advertised features
-match the implementation.
+release-blocking findings from the pre-0.2.0 review and makes the advertised
+features match the implementation.
 
 ### MixedImputer
 
