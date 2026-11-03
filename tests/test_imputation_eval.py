@@ -42,16 +42,29 @@ CREDIT_ARFF = DATA_DIR / "credit-g.arff"
 
 @pytest.fixture
 def simple_mixed_df() -> pd.DataFrame:
-    """A synthetic mixed DataFrame (no NaNs) for fast evaluation."""
+    """A synthetic mixed DataFrame with learnable cross-column signal."""
     rng = np.random.default_rng(42)
     n = 200
+    age = rng.integers(18, 80, size=n).astype(float)
+    income = 30000 + 900 * (age - 18) + rng.normal(0, 8000, n)
+    score = 40 + 0.6 * age + 0.0002 * income + rng.normal(0, 4, n)
+    city = np.select(
+        [
+            income > 85000,
+            (income > 65000) & (age > 45),
+            score > 80,
+        ],
+        ["paris", "london", "rome"],
+        default="berlin",
+    )
+    gender = np.where(score > 75, "M", "F")
     return pd.DataFrame(
         {
-            "age": rng.integers(18, 80, size=n).astype(float),
-            "city": rng.choice(["paris", "london", "berlin", "rome"], size=n),
-            "income": rng.integers(20000, 120000, size=n).astype(float),
-            "gender": rng.choice(["M", "F"], size=n),
-            "score": rng.normal(70, 15, size=n).clip(0, 100),
+            "age": age,
+            "city": city,
+            "income": income,
+            "gender": gender,
+            "score": score,
         }
     )
 
@@ -63,6 +76,7 @@ def _corrupt_and_impute(
     num_numeric: int = 1,
     num_nominal: int = 1,
     random_state: int = 42,
+    sample_posterior: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Helper: corrupt a clean DataFrame, impute it, return results.
 
@@ -86,6 +100,7 @@ def _corrupt_and_impute(
     imputer = MixedImputer(
         max_iter=10,
         random_state=random_state,
+        sample_posterior=sample_posterior,
     )
     imputed = imputer.fit_transform(corrupted)
 
@@ -301,7 +316,7 @@ class TestImputationAccuracy:
             acc_imputer = (true_vals == imputed_vals).mean()
             acc_mode = (true_vals == mode_val).mean()
 
-            assert acc_imputer >= acc_mode * 0.5, (
+            assert acc_imputer >= acc_mode * 0.8, (
                 f"Imputer accuracy ({acc_imputer:.2%}) for '{col}' is far worse "
                 f"than mode ({acc_mode:.2%})"
             )
@@ -385,6 +400,7 @@ class TestPosteriorSampling:
             num_numeric=2,
             num_nominal=1,
             random_state=42,
+            sample_posterior=True,
         )
         assert not imputed.isnull().any().any()
 
@@ -637,7 +653,7 @@ class TestPipelineSummary:
         report_lines = [
             "",
             "=" * 60,
-            "  Corruption → Imputation Pipeline Report",
+            "  Corruption -> Imputation Pipeline Report",
             "=" * 60,
             f"  Mechanism:          {mechanism}",
             f"  Corruption fraction: {frac:.0%}",
