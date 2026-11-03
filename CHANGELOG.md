@@ -2,7 +2,10 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.2.1] — 2026-11-03
+
+This is a benchmark and documentation release; there are no runtime-library API
+or behavior changes from `0.2.0`.
 
 ### Added
 
@@ -13,6 +16,9 @@ All notable changes to this project are documented here.
 - Fast `BayesianRidge`/`LogisticRegression` estimator mode for practical
   many-seed validation; `--estimator default` retains the package's
   HistGradientBoosting defaults.
+- Harness unit tests and documented Phase 1 findings; the 10-seed preliminary
+  run found linear interpolation best in 14/21 dataset/pattern cells, so no
+  general time-series superiority is claimed.
 
 ## [0.2.0] — 2026-11-03
 

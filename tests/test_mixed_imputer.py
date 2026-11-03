@@ -431,7 +431,7 @@ class TestVersion:
         """__version__ is a string."""
         from mixedimputer import __version__
         assert isinstance(__version__, str)
-        assert __version__ == "0.2.0"
+        assert __version__ == "0.2.1"
 
 
 # ──────────────────────────────────────────────────────────────────────
