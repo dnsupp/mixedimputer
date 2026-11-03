@@ -109,8 +109,67 @@ pip install -e ".[dev]"
 python benchmark/run_benchmarks.py
 ```
 
-The runner prints the tables above. It deliberately avoids Jupyter/Plotly so it
-can run in CI and on a headless machine.
+The runner prints the values used in the tables above. It deliberately avoids
+Jupyter/Plotly so it can run in CI and on a headless machine.
+
+### Time-series validation harness (Phase 1)
+
+A separate harness broadens time-series evaluation without changing the
+package API:
+
+```bash
+python benchmark/run_timeseries_validation.py --quick
+python benchmark/run_timeseries_validation.py --seeds 20
+```
+
+It covers:
+
+- synthetic white noise, AR(1), trend+seasonality, random walk, regime shift,
+  and multivariate correlated data
+- the bundled GPU sensor log when present
+- point MCAR at 10%/30% and contiguous block gaps at 10% (block length 10)
+- ffill/bfill, linear interpolation, observed mean, a one-shot HGB model on
+  lag/rolling features, and `TimeSeriesImputer` with no temporal features,
+  lags only, and lags + rolling features
+- 20-seed mean RMSE/MAE, 95% confidence intervals, win rates, and Wilcoxon
+  signed-rank comparisons versus `ts_full`
+
+By default the harness uses `BayesianRidge`/`LogisticRegression` inside the
+TimeSeries pipeline (`--estimator fast`) so a many-seed matrix is practical.
+Use `--estimator default` to test the package's HistGradientBoosting defaults;
+that mode is much slower. `--quick` is a two-seed smoke run.
+
+The harness deliberately does **not** yet include public/real-world datasets
+beyond the GPU log, Kalman/state-space baselines, or panel/group support. Those
+are Phase 2–3 work. Treat the generated report as validation evidence, not as a
+claim of general superiority; simple interpolation can win on smooth series.
+
+### Phase 1 preliminary findings (10 seeds, fast estimator)
+
+A 10-seed run across six synthetic datasets plus the GPU log and three
+missingness patterns (point10, point30, block10; `max_iter=5`,
+`--estimator fast`) produced:
+
+- **Average rank across the 21 dataset/pattern cells:** linear interpolation
+  `2.1`, `ts_full` `2.9`, `ts_lags` `2.9`, `hgb_lag` `4.2`, ffill `4.8`,
+  `ts_no_temporal` `5.1`, mean `6.0`.
+- **Best method count:** linear interpolation was best in `14/21` cells; mean
+  won the three white-noise cells; the TimeSeries variants won three
+  multivariate cells; `hgb_lag` won one GPU cell. `ts_full` was never the
+  single best method.
+- **GPU log:** linear interpolation was best for block10 and point30;
+  `hgb_lag` was best for point10. The earlier GPU headline used the default HGB
+  estimator, `max_iter=10`, and a different evaluation setup, so these results
+  are not directly comparable.
+- These numbers are for the fast `BayesianRidge`/`LogisticRegression` mode.
+  `--estimator default` tests the package's HistGradientBoosting defaults but
+  is much slower.
+
+The honest conclusion is that there is **no general time-series superiority**
+to claim yet. Interpolation is a strong baseline, especially for smooth/trending
+series; the value of the temporal features depends on the dataset. This is
+exactly why Phase 1 uses paired tests and per-dataset reporting rather than one
+aggregate score.
 
 The notebooks are for exploration:
 
@@ -124,17 +183,20 @@ go stale, and the runner is the canonical reproducible path.
 
 ## Limitations
 
-- **Single seed.** The tables use one corruption mask per fraction. Repeating
-  with multiple seeds and reporting mean ± 95% CI is the next step.
+- **Single seed in the headline tables.** The tables above use one corruption
+  mask per fraction. The Phase 1 validation harness adds multi-seed summaries
+  and confidence intervals; use it for time-series comparisons.
 - **Small samples at 1%.** Seven to nine corrupted cells per column on Titanic;
   four per column on the GPU log. Do not read the 1% rows as precise estimates.
-- **MCAR only.** MAR and MNAR mechanisms are implemented in `DataCorrupter` but
-  are not benchmarked here.
-- **One time-series dataset.** The GPU log is 356 seconds from one machine. It
-  does not establish general time-series performance.
-- **Baselines are simple.** Mean/mode/forward-fill are useful sanity checks, not
-  state-of-the-art competitors. Kalman/state-space/interpolation baselines are
-  not included.
+- **MCAR only in the headline tables.** MAR and MNAR mechanisms are implemented
+  in `DataCorrupter` but are not benchmarked in the main tables.
+- **One real time-series dataset in the headline table.** The GPU log is 356
+  seconds from one machine. The Phase 1 harness adds synthetic datasets, but
+  public real-world datasets are still Phase 2 work.
+- **Baselines are simple in the headline table.** Mean/mode/forward-fill are
+  useful sanity checks, not state-of-the-art competitors. The Phase 1 harness
+  adds interpolation and HGB-lag baselines; Kalman/state-space baselines are
+  Phase 3 work.
 - **No multiple imputation.** `sample_posterior=True` produces one stochastic
   completed dataset; the benchmark measures single imputation.
 - **Data provenance.** The Titanic and German Credit files need their original

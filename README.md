@@ -275,6 +275,23 @@ The notebooks in `benchmark/` are for interactive exploration. Full tables,
 methodology, and caveats are in
 [`BENCHMARKS.md`](https://github.com/dnsupp/mixedimputer/blob/main/BENCHMARKS.md).
 
+A separate Phase 1 time-series validation harness compares `TimeSeriesImputer`
+with ffill/bfill, linear interpolation, observed mean, an HGB-lag model, and
+temporal-feature ablations across synthetic datasets and point/block missingness:
+
+```bash
+python benchmark/run_timeseries_validation.py --quick
+python benchmark/run_timeseries_validation.py --seeds 20
+```
+
+It uses a fast `BayesianRidge`/`LogisticRegression` mode by default for
+practical many-seed runs; pass `--estimator default` to test the package's
+HistGradientBoosting defaults. The harness currently covers synthetic data and
+the bundled GPU log; public datasets and Kalman/state-space baselines remain
+Phase 2–3 work. A 10-seed preliminary run found linear interpolation best in
+14/21 dataset/pattern cells, so the current evidence does **not** support a
+general time-series superiority claim. See `BENCHMARKS.md` for the details.
+
 ### What the numbers actually show
 
 On Titanic at 10% MCAR corruption, `MixedImputer` reduced Age RMSE from 13.64

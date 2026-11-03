@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Phase 1 time-series validation harness
+  (`benchmark/run_timeseries_validation.py`): synthetic datasets, point and
+  block missingness, interpolation/mean/HGB-lag baselines, temporal-feature
+  ablations, multi-seed confidence intervals, and paired Wilcoxon comparisons.
+- Fast `BayesianRidge`/`LogisticRegression` estimator mode for practical
+  many-seed validation; `--estimator default` retains the package's
+  HistGradientBoosting defaults.
+
 ## [0.2.0] — 2026-11-03
 
 This release fixes the release-blocking findings from the repository review.
