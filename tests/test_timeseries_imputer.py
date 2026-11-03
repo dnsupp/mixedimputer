@@ -245,16 +245,13 @@ def test_unsorted_input_is_sorted_internally(unsorted_ts_df):
     )
     result = imputer.fit_transform(unsorted_ts_df)
 
-    # Output should have time in sorted order
-    assert result["time"].is_monotonic_increasing
-    assert list(result["time"]) == [1, 2, 3, 4, 5]
-    # Known non-missing values should be preserved at their sorted positions.
-    # Original: time=[5,1,3,2,4] → sorted: time=[1,2,3,4,5]
-    # Sorted values:  [NaN, NaN, 30.0, 50.0, 10.0]
-    assert result["value"].iloc[2] == pytest.approx(30.0, abs=0.01)  # time=3
-    assert result["value"].iloc[3] == pytest.approx(50.0, abs=0.01)  # time=4
-    assert result["value"].iloc[4] == pytest.approx(10.0, abs=0.01)  # time=5
-    # No NaN in output
+    # Rows are sorted internally for imputation, then restored to the
+    # original order with the original index.
+    assert list(result.index) == list(unsorted_ts_df.index)
+    assert list(result["time"]) == [5, 1, 3, 2, 4]
+    assert result.loc[0, "value"] == pytest.approx(10.0, abs=0.01)
+    assert result.loc[2, "value"] == pytest.approx(30.0, abs=0.01)
+    assert result.loc[4, "value"] == pytest.approx(50.0, abs=0.01)
     assert not result["value"].isna().any()
 
 
