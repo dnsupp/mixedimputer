@@ -5,14 +5,14 @@
   <a href="https://github.com/dnsupp/mixedimputer/actions/workflows/tests.yml">
     <img src="https://github.com/dnsupp/mixedimputer/actions/workflows/tests.yml/badge.svg" alt="Tests">
   </a>
-  <a href="https://pypi.org/project/mixed-imputer/">
-    <img src="https://img.shields.io/pypi/v/mixed-imputer" alt="PyPI Version">
+  <a href="https://pypi.org/project/mixedimputer/">
+    <img src="https://img.shields.io/pypi/v/mixedimputer" alt="PyPI Version">
   </a>
-  <a href="https://pypi.org/project/mixed-imputer/">
-    <img src="https://img.shields.io/pypi/pyversions/mixed-imputer" alt="Python Versions">
+  <a href="https://pypi.org/project/mixedimputer/">
+    <img src="https://img.shields.io/pypi/pyversions/mixedimputer" alt="Python Versions">
   </a>
   <a href="https://github.com/dnsupp/mixedimputer/blob/main/LICENSE">
-    <img src="https://img.shields.io/pypi/l/mixed-imputer" alt="License">
+    <img src="https://img.shields.io/pypi/l/mixedimputer" alt="License">
   </a>
 </p>
 
@@ -40,13 +40,13 @@ It automatically detects column types, encodes categoricals with `OrdinalEncoder
 ## Installation
 
 ```bash
-pip install mixed-imputer
+pip install mixedimputer
 ```
 
 For reading `.arff` or `.xlsx` files with `DataCorrupter`:
 
 ```bash
-pip install "mixed-imputer[io]"
+pip install "mixedimputer[io]"
 ```
 
 For development (tests, build tools, notebooks):
@@ -340,7 +340,7 @@ imputed = imputer.fit_transform(corrupted)
 - The requested fraction is applied to **observed** cells, not total cells.
 - Already-missing cells are never overwritten.
 - The same `random_state` gives the same mask; global NumPy/PyTorch RNG state is not modified.
-- `.arff` and `.xlsx`/`.xls` require `pip install "mixed-imputer[io]"`.
+- `.arff` and `.xlsx`/`.xls` require `pip install "mixedimputer[io]"`.
 
 ## Examples
 

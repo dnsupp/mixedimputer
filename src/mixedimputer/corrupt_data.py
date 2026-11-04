@@ -58,7 +58,7 @@ def _read_arff(filepath: str) -> pd.DataFrame:
     except ImportError as exc:
         raise ImportError(
             "Reading .arff files requires the optional dependency 'liac-arff'. "
-            "Install it with: pip install 'mixed-imputer[io]'"
+            "Install it with: pip install 'mixedimputer[io]'"
         ) from exc
 
     with open(filepath, "r", encoding="utf-8") as fh:
@@ -95,7 +95,7 @@ def _load_file(filepath: Union[str, os.PathLike], **kwargs) -> pd.DataFrame:
             raise ImportError(
                 f"Reading {os.path.splitext(path)[1]} files requires the "
                 f"optional dependency '{package}'. Install it with: "
-                "pip install 'mixed-imputer[io]'"
+                "pip install 'mixedimputer[io]'"
             ) from exc
     if lower.endswith(".arff"):
         return _read_arff(path)

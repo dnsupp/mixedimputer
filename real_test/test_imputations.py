@@ -2,7 +2,7 @@
 Real-world test of mixedimputer installed from PyPI.
 
 Run:
-    pip install mixed-imputer
+    pip install mixedimputer
     python real_test/test_imputations.py
 """
 

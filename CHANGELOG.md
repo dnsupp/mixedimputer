@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.2] — 2026-11-04
+
+This is a distribution-name release. The import package remains
+`mixedimputer`; there are no runtime code or API changes from `0.2.1`.
+
+### Changed
+
+- PyPI distribution renamed from `mixed-imputer` to `mixedimputer` (no hyphen),
+  matching the import package and the renamed GitHub repository.
+- Wheel/sdist filenames and project metadata now use `mixedimputer`.
+- Installation docs, badges, and optional-extra error messages updated.
+
+Existing `mixed-imputer` releases remain available under the old name for
+reproducibility; `0.2.2` is the start of the non-hyphenated distribution line.
+
 ## [0.2.1] — 2026-11-03
 
 This is a benchmark and documentation release; there are no runtime-library API
